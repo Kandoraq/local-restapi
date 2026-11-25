@@ -36,4 +36,4 @@ The redirect response places the original URL into a `Location` header. JSON dec
 
 ## Documentation structure
 
-The docs follow Diataxis. The tutorial teaches by doing, in one fixed path. The how-to page solves concrete tasks and assumes competence. The reference describes endpoints without instructing. This explanation gives background and trade-offs. Keeping these four needs separate prevents a reference page from turning into a tutorial and a tutorial from turning into a feature list.
+The docs are split by reader need. The tutorial teaches by doing, in one fixed path. The how-to page solves concrete tasks and assumes competence. The reference describes endpoints without instructing. This explanation gives background and trade-offs. Keeping these four needs separate prevents a reference page from turning into a tutorial and a tutorial from turning into a feature list.
