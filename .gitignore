@@ -1,0 +1,4 @@
+target/
+*.log
+shorturlapi/shorturls.json
+.DS_Store
