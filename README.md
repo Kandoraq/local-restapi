@@ -82,7 +82,7 @@ Networking differs by service:
 
 - `removewmapi` and `removebgapi` only read the request body. They never make outbound requests.
 - `tiktokapi` and `youtubeapi` make outbound HTTPS requests with a local TLS 1.3 implementation. Both keep a cookie jar that absorbs `Set-Cookie` and drops expired entries before the next request.
-- `youtubeapi` also implements AES-GCM, SHA-256, and X25519 locally. Its TLS client does not verify certificate chains. See [Security notes](#security-notes).
+- `youtubeapi` also implements AES-GCM, SHA-256, and X25519 locally. Outbound TLS uses mandatory SPKI pinning. See [Security notes](#security-notes).
 
 Request bodies are read in 64 KiB chunks. The declared `Content-Length` is capped, and memory grows only as bytes arrive, so a caller cannot force a large allocation with a single header.
 
@@ -252,6 +252,8 @@ The dashboard has no authentication. Use it only on a trusted local network. It 
 | `PORT` | all | see table above | Listening port |
 | `HOST` | `youtubeapi` | `127.0.0.1` | Bind address |
 | `YT_KEY` | `youtubeapi` | unset | Required `?key=` value when set |
+| `TLS_PIN_SHA256` | `youtubeapi`, `tiktokapi` | unset | SHA-256 of a server SPKI, overrides built-in pin |
+| `TLS_ALLOW_UNPINNED` | `youtubeapi`, `tiktokapi` | unset | Set to `1` to allow unverified TLS for hosts without a built-in pin |
 | `YT_COOKIES` | `youtubeapi` | `cookies.txt` | Cookie file path |
 
 The other services bind to `0.0.0.0`.
@@ -259,7 +261,8 @@ The other services bind to `0.0.0.0`.
 ## Security notes
 
 - All responses set `Access-Control-Allow-Origin: *`. Do not expose these services to untrusted networks without a reverse proxy that enforces your own policy.
-- `youtubeapi` completes a TLS 1.3 handshake but does not verify certificate chains. A machine in a trusted network position could present its own certificate. Use it on networks you control.
+- `tiktokapi` and `youtubeapi` require an SPKI SHA-256 pin on every outbound TLS connection. Built-in pins cover `tikwm.com`, `youtube.com`, `ytimg.com`, and `*.googlevideo.com`. Other hosts are rejected unless you set `TLS_PIN_SHA256` or explicitly set `TLS_ALLOW_UNPINNED=1`. Pins are compared against the SubjectPublicKeyInfo from the leaf certificate, so a leaf renewal with the same key keeps working. Full X.509 chain validation is not implemented; this is key continuity, not PKI verification.
+- `TLS_ALLOW_UNPINNED=1` removes server authentication for hosts without a built-in pin. Use it only on a network you control, and prefer a real pin when possible.
 - `YT_KEY` is a shared string. It is not a substitute for per-user authentication.
 - Cookie files and credentials are gitignored. See [.gitignore](.gitignore).
 - `tiktokapi` and `youtubeapi` only fetch hosts on an allowlist. `removewmapi` and `removebgapi` make no outbound requests.
