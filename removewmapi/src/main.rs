@@ -2,12 +2,14 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-const MAX_BODY: usize = 25 * 1024 * 1024;
+mod constants;
+
+use constants::{DEFAULT_PORT, MAX_BODY, READ_CHUNK, READ_TIMEOUT_SECS};
 
 fn main() {
-    let port = std::env::var("PORT").unwrap_or_else(|_| "8081".to_string());
+    let port = std::env::var("PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
     let addr = format!("0.0.0.0:{}", port);
-    let listener = TcpListener::bind(&addr).unwrap();
+    let listener = bind(&addr);
     println!("listening on {}", addr);
     for stream in listener.incoming() {
         if let Ok(s) = stream {
@@ -18,7 +20,7 @@ fn main() {
 
 fn read_body_limited<R: Read>(reader: &mut R, len: usize) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut chunk = [0u8; 65536];
+    let mut chunk = [0u8; READ_CHUNK];
     let mut left = len;
     while left > 0 {
         let want = left.min(chunk.len());
@@ -34,8 +36,15 @@ fn read_body_limited<R: Read>(reader: &mut R, len: usize) -> Vec<u8> {
     out
 }
 
+fn bind(addr: &str) -> TcpListener {
+    TcpListener::bind(addr).unwrap_or_else(|e| {
+        eprintln!("cannot bind {}: {}", addr, e);
+        std::process::exit(1);
+    })
+}
+
 fn handle_conn(mut stream: TcpStream) {
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut request_line = String::new();
     if reader.read_line(&mut request_line).is_err() { return; }
@@ -112,22 +121,38 @@ fn parse_query(q: &str) -> std::collections::HashMap<String, String> {
 }
 
 fn url_decode(s: &str) -> String {
-    let mut out = Vec::new();
     let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 3 <= b.len() {
-            let h = &s[i+1..i+3];
-            if let Ok(val) = u8::from_str_radix(h, 16) {
-                out.push(val);
-                i += 3;
-                continue;
+        if b[i] == b'%' {
+            if i + 2 < b.len() {
+                if let (Some(h), Some(l)) = (hexval(b[i+1]), hexval(b[i+2])) {
+                    out.push((h << 4) | l);
+                    i += 3;
+                    continue;
+                }
             }
+            out.push(b'%');
+            i += 1;
+        } else if b[i] == b'+' {
+            out.push(b' ');
+            i += 1;
+        } else {
+            out.push(b[i]);
+            i += 1;
         }
-        if b[i] == b'+' { out.push(b' '); } else { out.push(b[i]); }
-        i += 1;
     }
     String::from_utf8_lossy(&out).to_string()
+}
+
+fn hexval(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn extract_image(ct: &str, body: &[u8], _headers: &std::collections::HashMap<String,String>) -> Option<Vec<u8>> {

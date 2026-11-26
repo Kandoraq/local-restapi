@@ -1,13 +1,17 @@
+use crate::constants::{MAX_BODY, READ_CHUNK, READ_TIMEOUT_SECS};
 use crate::tiktok;
 use crate::util::{extract_json_string, json_escape, parse_query};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
-const MAX_BODY: usize = 1_048_576;
+fn bind(port: u16) -> std::io::Result<TcpListener> {
+    let addr = format!("0.0.0.0:{}", port);
+    TcpListener::bind(&addr)
+}
 
 pub fn run(port: u16) -> std::io::Result<()> {
-    let listener = TcpListener::bind(format!("0.0.0.0:{}", port))?;
+    let listener = bind(port)?;
     println!("listening on 0.0.0.0:{}", port);
     for stream in listener.incoming() {
         match stream {
@@ -22,7 +26,7 @@ pub fn run(port: u16) -> std::io::Result<()> {
 
 fn read_body_limited<R: Read>(reader: &mut R, len: usize) -> Vec<u8> {
     let mut out = Vec::new();
-    let mut chunk = [0u8; 65536];
+    let mut chunk = [0u8; READ_CHUNK];
     let mut left = len;
     while left > 0 {
         let want = left.min(chunk.len());
@@ -39,7 +43,7 @@ fn read_body_limited<R: Read>(reader: &mut R, len: usize) -> Vec<u8> {
 }
 
 fn handle(mut stream: TcpStream) {
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(READ_TIMEOUT_SECS)));
     let mut reader = BufReader::new(match stream.try_clone() { Ok(s) => s, Err(_) => return });
     let mut line = String::new();
     if reader.read_line(&mut line).is_err() { return; }
