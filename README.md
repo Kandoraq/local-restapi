@@ -1,19 +1,6 @@
 # local-restapi
 
-```
- ██╗     ██╗██╗   ██╗███████╗████████╗███████╗██████╗ ███████╗
- ██║     ██║██║   ██║██╔════╝╚══██╔══╝██╔════╝██╔══██╗██╔════╝
- ██║     ██║██║   ██║█████╗     ██║   █████╗  ██████╔╝█████╗
- ██║     ██║██║   ██║██╔══╝     ██║   ██╔══╝  ██╔══██╗██╔══╝
- ███████╗██║╚██████╔╝███████╗   ██║   ███████╗██║  ██║███████╗
- ╚══════╝╚═╝ ╚═════╝ ╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝╚══════╝
- ██████╗  █████╗ ██████╗ ███████╗███████╗██╗   ██╗███████╗
- ██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔════╝██║   ██║██╔════╝
- ██████╔╝███████║██████╔╝█████╗  ███████╗██║   ██║█████╗
- ██╔══██╗██╔══██╗██╔══██╗██╔══╝  ╚════██║██║   ██║██╔══╝
- ██║  ██║██║  ██║██║  ██║███████╗███████║╚██████╔╝███████╗
- ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝ ╚═════╝ ╚══════╝
-```
+![local-restapi banner](assets/banner.png)
 
 Five small REST services written in Rust. Each service runs as its own binary on its own port and has no third-party crate dependencies.
 
@@ -27,9 +14,6 @@ Five small REST services written in Rust. Each service runs as its own binary on
 
 All services listen on `0.0.0.0` by default. Set `PORT` to override the port.
 
-## License
-
-[MIT](LICENSE).
 
 ## Documentation
 
@@ -45,3 +29,7 @@ The docs are split by what the reader is trying to do. Each file does one job:
 The tutorial gives one fixed path from a clean checkout to a working request. The how-to page assumes competence and answers concrete tasks. The reference lists endpoints and parameters without instructing. The explanation covers trade-offs and limits. Keeping these separate prevents the reference from becoming a tutorial and the tutorial from becoming a feature list.
 
 All documentation is written here from scratch. No documentation framework or external code was copied.
+
+## License
+
+[MIT](LICENSE).
