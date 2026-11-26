@@ -1,5 +1,27 @@
+# Build output
 target/
-*.log
-.DS_Store
 
-youtubeapi/cookies.txt
+# Logs and runtime state
+*.log
+shorturlapi/shorturls.json
+*.cache
+*.tmp
+
+# Credentials and secrets
+cookies.txt
+*.cookie
+*.cookies
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
+token.txt
+tokens.txt
+secrets.txt
+credentials.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
