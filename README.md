@@ -10,6 +10,7 @@ A collection of small REST services written in Rust. Every service is its own bi
 
 | Service | Port | Purpose |
 | --- | --- | --- |
+| `dashboard` | 8080 | Monitor and control the services, plus browser tools |
 | `removewmapi` | 8081 | Remove a watermark from a PNG |
 | `tiktokapi` | 8082 | Read TikTok metadata and download its media |
 | `removebgapi` | 8084 | Remove a flat-colour background from a PNG |
@@ -220,6 +221,25 @@ curl 'http://127.0.0.1:8085/api/search?q=rust&key=a-long-random-string'
 ```
 
 `YT_KEY` is a shared static string, not a per-user token. It keeps casual callers out. It is not an authentication system.
+
+## Dashboard
+
+Run the dashboard from the repository root:
+
+```sh
+cargo build --release --manifest-path dashboard/Cargo.toml
+./dashboard/target/release/dashboard
+```
+
+Open `http://<this-device-ip>:8080` in a browser. The dashboard has five pages:
+
+- `/` shows one card per service with status, PID, uptime, endpoints, recent logs, and Start/Stop buttons.
+- `/download` fetches TikTok or YouTube media directly from the APIs and saves it in the browser.
+- `/watch` plays a YouTube stream directly with `<video controls>` using `/api/stream`.
+- `/images` uploads a PNG and applies remove-bg or remove-watermark, then shows the result.
+- `/about` shows the repository, license, and developer links.
+
+The dashboard has no authentication. Use it only on a trusted local network. It writes service output to `logs/<service>.log`.
 
 ## Configuration
 

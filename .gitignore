@@ -1,5 +1,6 @@
 # Build output
 target/
+logs/
 
 # Logs and runtime state
 *.log
