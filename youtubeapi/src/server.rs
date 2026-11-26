@@ -2,7 +2,7 @@ use crate::httpc;
 use crate::json::quote;
 use crate::yt::{self, Video};
 use std::collections::HashMap;
-use crate::constants::{CACHE_TTL, READ_CHUNK, STREAM_TIMEOUT_SECS, UPSTREAM_TIMEOUT_SECS};
+use crate::constants::{CACHE_TTL, READ_CHUNK, STREAM_MAX_BYTES, STREAM_TIMEOUT_SECS, UPSTREAM_TIMEOUT_SECS};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Mutex, OnceLock};
@@ -400,6 +400,143 @@ fn open_upstream(target: &str, range: Option<&str>) -> Result<httpc::Response, S
     httpc::fetch(target, "GET", &headers, None, UPSTREAM_TIMEOUT_SECS, None)
 }
 
+fn parse_client_range(v: &str, total: u64) -> Option<(u64, u64)> {
+    let s = v.trim().strip_prefix("bytes=")?.trim();
+    let (a, b) = s.split_once('-')?;
+    let start: u64 = if a.trim().is_empty() {
+        return None;
+    } else {
+        a.trim().parse().ok()?
+    };
+    if start >= total {
+        return None;
+    }
+    let end = if b.trim().is_empty() {
+        total - 1
+    } else {
+        b.trim().parse::<u64>().ok()?.min(total - 1)
+    };
+    if end < start {
+        return None;
+    }
+    Some((start, end))
+}
+
+fn proxy_stream_full(
+    s: &mut TcpStream,
+    req: &Req,
+    target: &str,
+    content_type: Option<String>,
+) -> io::Result<()> {
+    let mut up = match open_upstream(target, None) {
+        Ok(r) => r,
+        Err(e) => return send_json(s, 502, error_json(&format!("upstream: {}", e))),
+    };
+    if up.status != 200 && up.status != 206 {
+        return send_json(s, 502, error_json(&format!("upstream status {}", up.status)));
+    }
+    up.set_timeout(STREAM_TIMEOUT_SECS);
+    let total = match up.content_length() {
+        Some(n) if n > 0 => n,
+        _ => {
+            let body = match up.read_to_end(STREAM_MAX_BYTES) {
+                Ok(b) => b,
+                Err(e) => return send_json(s, 502, error_json(&format!("upstream read failed: {}", e))),
+            };
+            return serve_slice(s, req, &body, content_type.unwrap_or_else(|| up.content_type()));
+        }
+    };
+    if total > STREAM_MAX_BYTES as u64 {
+        return send_json(s, 502, error_json("stream is too large"));
+    }
+    let range = req.h("range").and_then(|r| parse_client_range(r, total));
+    let (status, from, to) = match range {
+        Some((a, b)) => (206, a, b + 1),
+        None => (200, 0, total),
+    };
+    let ct = content_type.unwrap_or_else(|| up.content_type());
+    let mut h = base_headers();
+    h.push(("Content-Type".to_string(), ct));
+    h.push(("Accept-Ranges".to_string(), "bytes".to_string()));
+    h.push(("Content-Length".to_string(), (to - from).to_string()));
+    h.push(("Connection".to_string(), "close".to_string()));
+    if status == 206 {
+        h.push((
+            "Content-Range".to_string(),
+            format!("bytes {}-{}/{}", from, to - 1, total),
+        ));
+    }
+    let mut head = format!("HTTP/1.1 {} {}\r\n", status, status_text(status));
+    for (k, v) in &h {
+        head.push_str(k);
+        head.push_str(": ");
+        head.push_str(v);
+        head.push_str("\r\n");
+    }
+    head.push_str("\r\n");
+    s.write_all(head.as_bytes())?;
+    s.flush()?;
+
+    let mut buf = vec![0u8; READ_CHUNK];
+    let mut pos: u64 = 0;
+    let mut written: u64 = 0;
+    while written < to - from {
+        let n = match up.read_body(&mut buf) {
+            Ok(n) => n,
+            Err(e) => return send_json(s, 502, error_json(&format!("upstream read failed: {}", e))),
+        };
+        if n == 0 {
+            return send_json(s, 502, error_json(&format!(
+                "incomplete upstream stream: {}/{} bytes",
+                written,
+                to - from
+            )));
+        }
+        let lo = pos.max(from);
+        let hi = (pos + n as u64).min(to);
+        if hi > lo {
+            let a = (lo - pos) as usize;
+            let b = (hi - pos) as usize;
+            s.write_all(&buf[a..b])?;
+            written += hi - lo;
+            s.flush()?;
+        }
+        pos += n as u64;
+    }
+    Ok(())
+}
+
+fn serve_slice(s: &mut TcpStream, req: &Req, body: &[u8], ct: String) -> io::Result<()> {
+    let total = body.len() as u64;
+    let range = req.h("range").and_then(|r| parse_client_range(r, total));
+    let (status, from, to) = match range {
+        Some((a, b)) => (206, a as usize, (b + 1) as usize),
+        None => (200, 0, body.len()),
+    };
+    let mut h = base_headers();
+    h.push(("Content-Type".to_string(), ct));
+    h.push(("Accept-Ranges".to_string(), "bytes".to_string()));
+    h.push(("Content-Length".to_string(), (to - from).to_string()));
+    h.push(("Connection".to_string(), "close".to_string()));
+    if status == 206 {
+        h.push((
+            "Content-Range".to_string(),
+            format!("bytes {}-{}/{}", from, to - 1, total),
+        ));
+    }
+    let mut head = format!("HTTP/1.1 {} {}\r\n", status, status_text(status));
+    for (k, v) in &h {
+        head.push_str(k);
+        head.push_str(": ");
+        head.push_str(v);
+        head.push_str("\r\n");
+    }
+    head.push_str("\r\n");
+    s.write_all(head.as_bytes())?;
+    s.write_all(&body[from..to])?;
+    s.flush()
+}
+
 fn proxy_stream(
     s: &mut TcpStream,
     req: &Req,
@@ -663,7 +800,7 @@ fn route(s: &mut TcpStream, req: &Req) -> io::Result<()> {
                 return send_json(s, 502, error_json("format has no direct URL"));
             }
             let ct = f.mime.split(';').next().unwrap_or("video/mp4").trim().to_string();
-            let disp = if req.path == "/api/download" {
+            if req.path == "/api/download" {
                 let ext = extension_for(&f.mime);
                 let quality = if f.quality.is_empty() {
                     if f.height > 0 { format!("{}p", f.height) } else { "best".to_string() }
@@ -672,15 +809,15 @@ fn route(s: &mut TcpStream, req: &Req) -> io::Result<()> {
                 };
                 let label = format!("{} [youtube {} {}]", v.title, quality, f.kind);
                 let name = safe_filename(&label, ext);
-                Some(format!(
+                let disp = format!(
                     "attachment; filename=\"{}\"; filename*=UTF-8''{}",
                     name.replace('"', ""),
                     urlish(&name)
-                ))
+                );
+                proxy_stream(s, req, &f.url, Some(ct), Some(disp))
             } else {
-                None
-            };
-            proxy_stream(s, req, &f.url, Some(ct), disp)
+                proxy_stream_full(s, req, &f.url, Some(ct))
+            }
         }
         "/api/proxy" => {
             let target = match req.q("url") {
