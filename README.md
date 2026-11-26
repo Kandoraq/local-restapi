@@ -222,6 +222,8 @@ curl 'http://127.0.0.1:8085/api/search?q=rust&key=a-long-random-string'
 
 `YT_KEY` is a shared static string, not a per-user token. It keeps casual callers out. It is not an authentication system.
 
+YouTube often gates one client profile with a bot check. The API tries Android, iOS, and Android VR first, uses the first response with both video and audio formats, and stops early so a gated client does not block playback. It also accepts progressive formats when adaptive formats are missing. The web and embedded profiles are kept only as a last resort because YouTube frequently rejects them.
+
 ## Dashboard
 
 Run the dashboard from the repository root:
