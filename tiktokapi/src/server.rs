@@ -175,7 +175,7 @@ fn error(stream: &mut TcpStream, msg: &str) {
 
 fn write(stream: &mut TcpStream, code: u16, reason: &str, ct: &str, body: &[u8], name: Option<&str>, json_len: bool) {
     let mut resp = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Expose-Headers: Content-Disposition, Content-Length\r\nConnection: close\r\n",
         code, reason, ct, body.len()
     );
     if let Some(n) = name {

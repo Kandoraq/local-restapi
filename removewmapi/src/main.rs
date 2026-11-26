@@ -11,10 +11,8 @@ fn main() {
     let addr = format!("0.0.0.0:{}", port);
     let listener = bind(&addr);
     println!("listening on {}", addr);
-    for stream in listener.incoming() {
-        if let Ok(s) = stream {
-            thread::spawn(move || handle_conn(s));
-        }
+    for s in listener.incoming().flatten() {
+        thread::spawn(move || handle_conn(s));
     }
 }
 
@@ -91,7 +89,7 @@ fn handle_conn(mut stream: TcpStream) {
             Some(bytes) => {
                 match process_image(&bytes, &params) {
                     Ok(out) => {
-                        let header = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n", out.len());
+                        let header = format!("HTTP/1.1 200 OK\r\nContent-Type: image/png\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n", out.len());
                         let _ = stream.write_all(header.as_bytes());
                         let _ = stream.write_all(&out);
                     }
@@ -167,10 +165,8 @@ fn extract_image(ct: &str, body: &[u8], _headers: &std::collections::HashMap<Str
                 let mut data = &part[pos+4..];
                 if data.ends_with(b"\r\n") { data = &data[..data.len()-2]; }
                 let headers = String::from_utf8_lossy(header_bytes);
-                if headers.to_lowercase().contains("name=\"image\"") || headers.to_lowercase().contains("name='image'") || headers.to_lowercase().contains("filename=") {
-                    if headers.to_lowercase().contains("filename=") || headers.to_lowercase().contains("name=\"image\"") {
-                        return Some(data.to_vec());
-                    }
+                if headers.to_lowercase().contains("filename=") || headers.to_lowercase().contains("name=\"image\"") {
+                    return Some(data.to_vec());
                 }
             }
         }
@@ -278,7 +274,7 @@ fn inpaint(rgba: &mut [u8], w: u32, h: u32, mask: &[bool], params: &std::collect
                     }
                 }
                 if cnt > 0 {
-                    newvals[idx] = Some(((sr/cnt) as u8,(sg/cnt) as u8,(sb/cnt) as u8));
+                    newvals[idx] = Some((sr.div_ceil(cnt) as u8,sg.div_ceil(cnt) as u8,sb.div_ceil(cnt) as u8));
                 }
             }
         }
@@ -451,9 +447,6 @@ fn zlib_store(data: &[u8]) -> Vec<u8> {
         if n == 0 { break; }
         if data.is_empty() { break; }
     }
-    if data.is_empty() {
-    } else {
-    }
     let adler = adler32(data);
     out.extend_from_slice(&adler.to_be_bytes());
     out
@@ -472,7 +465,7 @@ fn inflate_zlib(data: &[u8]) -> Result<Vec<u8>, String> {
     if data.len() < 6 { return Err("short".into()); }
     let cmf = data[0]; let flg = data[1];
     if cmf & 0x0F != 8 { return Err("bad cmf".into()); }
-    if ((cmf as u32)*256 + flg as u32) % 31 != 0 { return Err("bad flg".into()); }
+    if !((cmf as u32)*256 + flg as u32).is_multiple_of(31) { return Err("bad flg".into()); }
     let pos = 2;
 
     if flg & 0x20 != 0 { return Err("preset dict not supported".into()); }
@@ -546,7 +539,7 @@ impl<'a> BitReader<'a> {
         Ok(v)
     }
     fn align(&mut self) {
-        if self.bitpos % 8 != 0 { self.bitpos += 8 - (self.bitpos % 8); }
+        if !self.bitpos.is_multiple_of(8) { self.bitpos += 8 - (self.bitpos % 8); }
     }
     fn read_u16(&mut self) -> Result<u16, String> {
         if self.bitpos/8 + 2 > self.data.len() { return Err("eof".into()); }
@@ -626,10 +619,10 @@ fn insert_node(node: &mut Node, code: usize, bits: usize, symbol: u16) {
 
 fn fixed_lit_tree() -> Node {
     let mut lengths = vec![0u8; 288];
-    for i in 0..144 { lengths[i] = 8; }
-    for i in 144..256 { lengths[i] = 9; }
-    for i in 256..280 { lengths[i] = 7; }
-    for i in 280..288 { lengths[i] = 8; }
+    for item in lengths.iter_mut().take(144) { *item = 8; }
+    for item in lengths.iter_mut().take(256).skip(144) { *item = 9; }
+    for item in lengths.iter_mut().take(280).skip(256) { *item = 7; }
+    for item in lengths.iter_mut().take(288).skip(280) { *item = 8; }
     build_tree(&lengths)
 }
 

@@ -144,37 +144,35 @@ impl Response {
                 Ok(n)
             }
             Mode::Chunked => {
-                loop {
-                    if self.chunk_left == 0 {
-                        let line = self.conn.read_until(b"\r\n", 256).map_err(ioerr)?;
-                        let s = String::from_utf8_lossy(&line);
-                        let sz = s.split(';').next().unwrap_or("").trim();
-                        let size = u64::from_str_radix(sz, 16)
-                            .map_err(|_| format!("invalid chunk: {:?}", sz))?;
-                        if size == 0 {
-                            loop {
-                                let t = self.conn.read_until(b"\r\n", 8192).map_err(ioerr)?;
-                                if t.is_empty() {
-                                    break;
-                                }
+                if self.chunk_left == 0 {
+                    let line = self.conn.read_until(b"\r\n", 256).map_err(ioerr)?;
+                    let s = String::from_utf8_lossy(&line);
+                    let sz = s.split(';').next().unwrap_or("").trim();
+                    let size = u64::from_str_radix(sz, 16)
+                        .map_err(|_| format!("invalid chunk: {:?}", sz))?;
+                    if size == 0 {
+                        loop {
+                            let t = self.conn.read_until(b"\r\n", 8192).map_err(ioerr)?;
+                            if t.is_empty() {
+                                break;
                             }
-                            self.finished = true;
-                            return Ok(0);
                         }
-                        self.chunk_left = size;
-                    }
-                    let want = out.len().min(self.chunk_left as usize);
-                    let n = self.conn.read_some(&mut out[..want]).map_err(ioerr)?;
-                    if n == 0 {
                         self.finished = true;
                         return Ok(0);
                     }
-                    self.chunk_left -= n as u64;
-                    if self.chunk_left == 0 {
-                        let _ = self.conn.read_until(b"\r\n", 2);
-                    }
-                    return Ok(n);
+                    self.chunk_left = size;
                 }
+                let want = out.len().min(self.chunk_left as usize);
+                let n = self.conn.read_some(&mut out[..want]).map_err(ioerr)?;
+                if n == 0 {
+                    self.finished = true;
+                    return Ok(0);
+                }
+                self.chunk_left -= n as u64;
+                if self.chunk_left == 0 {
+                    let _ = self.conn.read_until(b"\r\n", 2);
+                }
+                Ok(n)
             }
         }
     }

@@ -94,7 +94,7 @@ pub fn health(port: u16) -> bool {
         Err(_) => return false,
     };
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-    let req = format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    let req = "GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".to_string();
     if stream.write_all(req.as_bytes()).is_err() {
         return false;
     }

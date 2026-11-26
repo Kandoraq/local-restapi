@@ -239,6 +239,8 @@ Open `http://<this-device-ip>:8080` in a browser. The dashboard has five pages:
 - `/images` uploads a PNG and applies remove-bg or remove-watermark, then shows the result.
 - `/about` shows the repository, license, and developer links.
 
+The interface is built with React 18. React, React DOM, and htm are vendored under `dashboard/assets/` and embedded into the Rust binary with `include_str!`. There is no Node.js build step and no Node.js runtime dependency. Rust serves the HTML shell and the assets; the browser runs React as plain UMD scripts.
+
 The dashboard has no authentication. Use it only on a trusted local network. It writes service output to `logs/<service>.log`.
 
 ## Configuration

@@ -68,7 +68,7 @@ fn base_headers() -> Vec<(String, String)> {
         ),
         (
             "Access-Control-Expose-Headers".to_string(),
-            "Content-Length, Content-Range, Accept-Ranges".to_string(),
+            "Content-Length, Content-Range, Accept-Ranges, Content-Disposition".to_string(),
         ),
     ]
 }
@@ -236,9 +236,7 @@ fn safe_filename(title: &str, ext: &str) -> String {
     let mut t: String = title
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_' {
-                c
-            } else if c.is_alphanumeric() {
+            if c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_' || c.is_alphanumeric() {
                 c
             } else {
                 '_'

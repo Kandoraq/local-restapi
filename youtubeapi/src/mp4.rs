@@ -61,13 +61,13 @@ fn moov_duration(payload: &[u8]) -> Option<i64> {
     while let Some((hdr, size, name)) = box_at(payload, off) {
         if &name == b"mvhd" || &name == b"mdhd" {
             if let Some(ms) = mvhd_ms(&payload[off + hdr..]) {
-                if best.map_or(true, |b| ms > b) {
+                if best.is_none_or(|b| ms > b) {
                     best = Some(ms);
                 }
             }
         } else if &name == b"trak" || &name == b"mdia" {
             if let Some(ms) = moov_duration(&payload[off + hdr..(off + size).min(payload.len())]) {
-                if best.map_or(true, |b| ms > b) {
+                if best.is_none_or(|b| ms > b) {
                     best = Some(ms);
                 }
             }
