@@ -271,6 +271,8 @@ The other services bind to `0.0.0.0`.
 
 **No third-party crates.** The image tools implement PNG decoding, deflate, and inflation locally. The network tools implement TLS, AES-GCM, SHA-256, and X25519 locally. Builds work without a crate cache.
 
+**Original files and metadata.** Both APIs return the bytes, content type, and filename from the upstream source. `tiktokapi` reads the CDN `Content-Type` and `Content-Disposition`, falling back to the last segment of the CDN URL. `youtubeapi` forwards the upstream `Content-Disposition`, falling back to the last segment of the googlevideo URL. Neither API invents a filename or rewrites the media container.
+
 **No muxed YouTube stream.** YouTube serves video and audio as separate adaptive streams. There is no single original MP4 to download. `youtubeapi` exposes the separate streams and leaves combining them to ffmpeg.
 
 **No fake TikTok video.** A photo post is reported as `slideshow` with an `images` array. It is never presented as an MP4.

@@ -232,25 +232,29 @@ fn extension_for(mime: &str) -> &'static str {
     }
 }
 
-fn safe_filename(title: &str, ext: &str) -> String {
-    let mut t: String = title
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == ' ' || c == '-' || c == '_' || c.is_alphanumeric() {
-                c
-            } else {
-                '_'
+fn url_basename(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    let raw = path.rsplit('/').next().unwrap_or("download");
+    let bytes = raw.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let Ok(v) = u8::from_str_radix(&raw[i + 1..i + 3], 16) {
+                out.push(v);
+                i += 3;
+                continue;
             }
-        })
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    let s = String::from_utf8_lossy(&out);
+    let name: String = s
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
         .collect();
-    t = t.trim().to_string();
-    if t.is_empty() {
-        t = "video".to_string();
-    }
-    if t.len() > 90 {
-        t.truncate(90);
-    }
-    format!("{}.{}", t, ext)
+    if name.is_empty() { "download".to_string() } else { name }
 }
 
 fn formats_json(v: &Video) -> String {
@@ -592,7 +596,11 @@ fn proxy_stream(
     if let Some(cr) = up.header("content-range") {
         h.push(("Content-Range".to_string(), cr.to_string()));
     }
-    if let Some(d) = disposition {
+    if let Some(d) = up
+        .header("content-disposition")
+        .map(|v| v.to_string())
+        .or(disposition)
+    {
         h.push(("Content-Disposition".to_string(), d));
     }
 
@@ -801,19 +809,8 @@ fn route(s: &mut TcpStream, req: &Req) -> io::Result<()> {
             }
             let ct = f.mime.split(';').next().unwrap_or("video/mp4").trim().to_string();
             if req.path == "/api/download" {
-                let ext = extension_for(&f.mime);
-                let quality = if f.quality.is_empty() {
-                    if f.height > 0 { format!("{}p", f.height) } else { "best".to_string() }
-                } else {
-                    f.quality.clone()
-                };
-                let label = format!("{} [youtube {} {}]", v.title, quality, f.kind);
-                let name = safe_filename(&label, ext);
-                let disp = format!(
-                    "attachment; filename=\"{}\"; filename*=UTF-8''{}",
-                    name.replace('"', ""),
-                    urlish(&name)
-                );
+                let name = url_basename(&f.url);
+                let disp = format!("attachment; filename=\"{}\"", name.replace('"', ""));
                 proxy_stream(s, req, &f.url, Some(ct), Some(disp))
             } else {
                 proxy_stream_full(s, req, &f.url, Some(ct))
@@ -831,19 +828,6 @@ fn route(s: &mut TcpStream, req: &Req) -> io::Result<()> {
         }
         _ => send_json(s, 404, error_json("endpoint not found")),
     }
-}
-
-fn urlish(s: &str) -> String {
-    let mut out = String::new();
-    for b in s.as_bytes() {
-        let c = *b as char;
-        if c.is_ascii_alphanumeric() || "-_.~".contains(c) {
-            out.push(c);
-        } else {
-            out.push_str(&format!("%{:02X}", b));
-        }
-    }
-    out
 }
 
 fn handle(mut s: TcpStream) -> io::Result<()> {
