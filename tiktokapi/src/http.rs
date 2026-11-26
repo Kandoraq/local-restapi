@@ -129,9 +129,21 @@ pub fn get_text(url: &str, max_size: &str, timeout: &str) -> Result<String, Stri
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
-pub fn get(url: &str, max_size: &str, timeout: &str) -> Result<Vec<u8>, String> {
+pub struct Media {
+    pub bytes: Vec<u8>,
+    pub content_type: String,
+    pub disposition: Option<String>,
+}
+
+pub fn get_media(url: &str, max_size: &str, timeout: &str) -> Result<Media, String> {
     let mut r = request(url, &[], number(timeout, 30))?;
-    r.read_to_end(number(max_size, 512 * 1024 * 1024) as usize)
+    let ct = r
+        .header("content-type")
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    let disposition = r.header("content-disposition").map(|v| v.to_string());
+    let bytes = r.read_to_end(number(max_size, 512 * 1024 * 1024) as usize)?;
+    Ok(Media { bytes, content_type: ct, disposition })
 }
 
 #[cfg(test)]

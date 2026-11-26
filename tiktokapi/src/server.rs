@@ -115,12 +115,18 @@ fn handle(mut stream: TcpStream) {
         };
         let quality = params.get("quality").map(|s| s.as_str()).unwrap_or("hd");
         match tiktok::fetch(&url).and_then(|raw| tiktok::parse_info(&raw)) {
-            Ok(info) => match tiktok::media_url(&info, quality, fmt)
-                .and_then(|m| tiktok::download(&m, fmt)) {
-                Ok((bytes, ct, ext)) => {
-                    let name = if info.id.is_empty() { format!("tiktok.{}", ext) } else { format!("tiktok_{}.{}", info.id, ext) };
-                    write(&mut stream, 200, "OK", &ct, &bytes, Some(&name), false);
-                }
+            Ok(info) => match tiktok::media_url(&info, quality, fmt) {
+                Ok(media) => match tiktok::download(&media) {
+                    Ok(d) => {
+                        let name = d
+                            .disposition
+                            .as_deref()
+                            .and_then(parse_filename)
+                            .unwrap_or_else(|| url_basename(&media));
+                        write(&mut stream, 200, "OK", &d.content_type, &d.bytes, Some(&name), false);
+                    }
+                    Err(e) => error(&mut stream, &e),
+                },
                 Err(e) => error(&mut stream, &e),
             },
             Err(e) => error(&mut stream, &e),
@@ -166,6 +172,50 @@ fn handle(mut stream: TcpStream) {
             Err(e) => error(&mut stream, &e),
         }
     }
+}
+
+fn parse_filename(header: &str) -> Option<String> {
+    let star = header.find("filename*=UTF-8''")?;
+    let raw = header[star + 17..].split(';').next()?.trim().trim_matches('"');
+    if !raw.is_empty() {
+        if raw.contains('%') {
+            let mut out = Vec::new();
+            let b = raw.as_bytes();
+            let mut i = 0;
+            while i < b.len() {
+                if b[i] == b'%' && i + 2 < b.len() {
+                    if let Ok(v) = u8::from_str_radix(&raw[i + 1..i + 3], 16) {
+                        out.push(v);
+                        i += 3;
+                        continue;
+                    }
+                }
+                out.push(b[i]);
+                i += 1;
+            }
+            if let Ok(s) = String::from_utf8(out) {
+                return Some(s);
+            }
+        }
+        return Some(raw.to_string());
+    }
+    let plain = header.find("filename=")?;
+    let name = header[plain + 9..]
+        .split(';')
+        .next()?
+        .trim()
+        .trim_matches('"')
+        .to_string();
+    if name.is_empty() { None } else { Some(name) }
+}
+
+fn url_basename(url: &str) -> String {
+    let path = url.split('?').next().unwrap_or(url);
+    let name = path.rsplit('/').next().unwrap_or("download");
+    let name = if name.is_empty() { "download" } else { name };
+    name.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '.' || *c == '-' || *c == '_')
+        .collect()
 }
 
 fn error(stream: &mut TcpStream, msg: &str) {

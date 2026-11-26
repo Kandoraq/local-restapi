@@ -87,7 +87,13 @@ pub fn host_allowed(url: &str) -> bool {
         || host.ends_with("tiktok.com")
 }
 
-pub fn download(media_url: &str, format: &str) -> Result<(Vec<u8>, String, String), String> {
+pub struct Downloaded {
+    pub bytes: Vec<u8>,
+    pub content_type: String,
+    pub disposition: Option<String>,
+}
+
+pub fn download(media_url: &str) -> Result<Downloaded, String> {
     if !media_url.starts_with("http://") && !media_url.starts_with("https://") {
         return Err("invalid media url".into());
     }
@@ -96,15 +102,14 @@ pub fn download(media_url: &str, format: &str) -> Result<(Vec<u8>, String, Strin
     }
     let mut last = String::from("download failed");
     for _ in 0..3 {
-        match http::get(media_url, "524288000", "600") {
-            Ok(bytes) => {
-                if bytes.is_empty() { last = "empty media".into(); continue; }
-                let (ct, ext) = if format == "mp3" {
-                    ("audio/mpeg", "mp3")
-                } else {
-                    ("video/mp4", "mp4")
-                };
-                return Ok((bytes, ct.to_string(), ext.to_string()));
+        match http::get_media(media_url, "524288000", "600") {
+            Ok(m) => {
+                if m.bytes.is_empty() { last = "empty media".into(); continue; }
+                return Ok(Downloaded {
+                    bytes: m.bytes,
+                    content_type: m.content_type,
+                    disposition: m.disposition,
+                });
             }
             Err(e) => { last = e; continue; }
         }
