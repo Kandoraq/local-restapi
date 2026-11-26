@@ -59,41 +59,6 @@ Response `200` with `Content-Type: image/png`. Transparent pixels replace the ba
 
 The request body limit is 25 MiB.
 
-## shorturlapi
-
-Default port: `8083`. Environment: `PORT`, `BASE_URL`.
-
-State file: `shorturls.json` in the service working directory.
-
-### `GET /` and `GET /health`
-
-Returns a JSON status object.
-
-### `POST /shorten`
-
-Alias: `/api/shorten`.
-
-Body may be JSON or form-encoded.
-
-| Field | Meaning |
-| --- | --- |
-| `url` | Original URL. Must start with `http://` or `https://` and be at least 30 characters |
-| `base_url` | Optional prefix used in `short_url` |
-
-Response `200` with `code`, `short_url`, and `original_url`. Response `400` for a missing, short, already-short, or malformed URL.
-
-URLs that contain control characters are rejected. This prevents header injection when the short URL is followed.
-
-### `GET /list`
-
-Returns `{"urls":{code:original_url,...}}`.
-
-### `GET /{code}`
-
-Response `302` with `Location` set to the original URL. Response `404` for an unknown code.
-
-The request body limit is 64 KiB.
-
 ## tiktokapi
 
 Default port: `8082`. Environment: `PORT`.
