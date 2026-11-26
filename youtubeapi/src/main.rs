@@ -1,3 +1,4 @@
+mod constants;
 mod crypto;
 mod httpc;
 mod json;
@@ -116,11 +117,11 @@ fn main() {
         return;
     }
 
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let host = std::env::var("HOST").unwrap_or_else(|_| constants::DEFAULT_HOST.to_string());
     let port: u16 = std::env::var("PORT")
         .ok()
         .and_then(|p| p.parse().ok())
-        .unwrap_or(8085);
+        .unwrap_or(constants::DEFAULT_PORT);
 
     println!("youtubeapi ready at http://{}:{}", host, port);
     println!("  GET /api/search?q=kata");

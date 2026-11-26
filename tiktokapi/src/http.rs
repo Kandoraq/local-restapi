@@ -105,7 +105,7 @@ fn absorb(headers: &[(String, String)]) {
     }
 }
 
-fn request(url: &str, extra: &[(String, String)]) -> Result<httpc::Response, String> {
+fn request(url: &str, extra: &[(String, String)], timeout: u64) -> Result<httpc::Response, String> {
     let mut headers = vec![
         ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
         ("Accept".to_string(), "application/json, text/html;q=0.9, */*;q=0.8".to_string()),
@@ -114,20 +114,24 @@ fn request(url: &str, extra: &[(String, String)]) -> Result<httpc::Response, Str
     for (k, v) in extra {
         headers.push((k.clone(), v.clone()));
     }
-    let r = httpc::get(url, &headers, 30)?;
+    let r = httpc::get(url, &headers, timeout)?;
     absorb(&r.headers);
     Ok(r)
 }
 
-pub fn get_text(url: &str, _max_size: &str, _timeout: &str) -> Result<String, String> {
-    let mut r = request(url, &[])?;
-    let bytes = r.read_to_end(10 * 1024 * 1024)?;
+fn number(s: &str, fallback: u64) -> u64 {
+    s.trim().parse().unwrap_or(fallback)
+}
+
+pub fn get_text(url: &str, max_size: &str, timeout: &str) -> Result<String, String> {
+    let mut r = request(url, &[], number(timeout, 30))?;
+    let bytes = r.read_to_end(number(max_size, 10 * 1024 * 1024) as usize)?;
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 
-pub fn get(url: &str, _max_size: &str, _timeout: &str) -> Result<Vec<u8>, String> {
-    let mut r = request(url, &[])?;
-    r.read_to_end(512 * 1024 * 1024)
+pub fn get(url: &str, max_size: &str, timeout: &str) -> Result<Vec<u8>, String> {
+    let mut r = request(url, &[], number(timeout, 30))?;
+    r.read_to_end(number(max_size, 512 * 1024 * 1024) as usize)
 }
 
 #[cfg(test)]

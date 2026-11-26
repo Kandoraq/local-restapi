@@ -2,12 +2,12 @@ use crate::httpc;
 use crate::json::quote;
 use crate::yt::{self, Video};
 use std::collections::HashMap;
+use crate::constants::{CACHE_TTL, READ_CHUNK, STREAM_TIMEOUT_SECS, UPSTREAM_TIMEOUT_SECS};
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-const CACHE_TTL: u64 = 240;
 
 fn cache() -> &'static Mutex<HashMap<String, (Instant, Video)>> {
     static C: OnceLock<Mutex<HashMap<String, (Instant, Video)>>> = OnceLock::new();
@@ -399,7 +399,7 @@ fn open_upstream(target: &str, range: Option<&str>) -> Result<httpc::Response, S
     if let Some(r) = range {
         headers.push(("Range".to_string(), r.to_string()));
     }
-    httpc::fetch(target, "GET", &headers, None, 60, None)
+    httpc::fetch(target, "GET", &headers, None, UPSTREAM_TIMEOUT_SECS, None)
 }
 
 fn proxy_stream(
@@ -425,7 +425,7 @@ fn proxy_stream(
         );
         return Ok(());
     }
-    up.set_timeout(180);
+    up.set_timeout(STREAM_TIMEOUT_SECS);
 
     let (start, mut expected) = if up.status == 206 {
         match up.header("content-range").and_then(parse_content_range) {
@@ -489,7 +489,10 @@ fn proxy_stream(
         }
         let n = match up.read_body(&mut buf) {
             Ok(n) => n,
-            Err(_) => 0,
+            Err(e) => {
+                let _ = send_json(s, 502, error_json(&format!("upstream read failed: {}", e)));
+                return Ok(());
+            }
         };
         if n == 0 {
             let total = match expected {
@@ -501,8 +504,10 @@ fn proxy_stream(
             }
             retries += 1;
             if retries > 10 {
-                eprintln!("[proxy] incomplete stream: {}/{} bytes", written, total);
-                break;
+                let _ = send_json(s, 502, error_json(&format!(
+                    "incomplete upstream stream: {}/{} bytes", written, total
+                )));
+                return Ok(());
             }
             let from = start + written;
             let to = start + total - 1;
@@ -510,15 +515,18 @@ fn proxy_stream(
             std::thread::sleep(Duration::from_millis(200 * retries.min(8) as u64));
             match open_upstream(target, Some(&rng)) {
                 Ok(r) if r.status == 206 => {
-                    r.set_timeout(180);
+                    r.set_timeout(STREAM_TIMEOUT_SECS);
                     up = r;
                 }
                 Ok(r) => {
-                    eprintln!("[proxy] resume rejected (HTTP {})", r.status);
-                    break;
+                    let _ = send_json(s, 502, error_json(&format!(
+                        "upstream rejected range resume (HTTP {})", r.status
+                    )));
+                    return Ok(());
                 }
                 Err(e) => {
-                    eprintln!("[proxy] resume failed: {}", e);
+                    let _ = send_json(s, 502, error_json(&format!("upstream resume failed: {}", e)));
+                    return Ok(());
                 }
             }
             continue;
@@ -707,7 +715,7 @@ fn handle(mut s: TcpStream) -> io::Result<()> {
     s.set_nodelay(true).ok();
     s.set_read_timeout(Some(Duration::from_secs(20))).ok();
     let mut buf: Vec<u8> = Vec::new();
-    let mut tmp = [0u8; 4096];
+    let mut tmp = [0u8; READ_CHUNK];
     loop {
         let n = s.read(&mut tmp)?;
         if n == 0 {
