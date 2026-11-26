@@ -86,7 +86,6 @@ enum Mode {
 pub struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
-    pub final_url: String,
     conn: TlsConn,
     mode: Mode,
     remaining: u64,
@@ -101,16 +100,6 @@ fn ioerr(e: io::Error) -> String {
 impl Response {
     pub fn header(&self, name: &str) -> Option<&str> {
         header_value(&self.headers, name)
-    }
-
-    pub fn content_type(&self) -> String {
-        self.header("content-type")
-            .unwrap_or("application/octet-stream")
-            .to_string()
-    }
-
-    pub fn content_length(&self) -> Option<u64> {
-        self.header("content-length").and_then(|v| v.trim().parse().ok())
     }
 
     pub fn read_body(&mut self, out: &mut [u8]) -> HttpResult<usize> {
@@ -144,37 +133,35 @@ impl Response {
                 Ok(n)
             }
             Mode::Chunked => {
-                loop {
-                    if self.chunk_left == 0 {
-                        let line = self.conn.read_until(b"\r\n", 256).map_err(ioerr)?;
-                        let s = String::from_utf8_lossy(&line);
-                        let sz = s.split(';').next().unwrap_or("").trim();
-                        let size = u64::from_str_radix(sz, 16)
-                            .map_err(|_| format!("invalid chunk: {:?}", sz))?;
-                        if size == 0 {
-                            loop {
-                                let t = self.conn.read_until(b"\r\n", 8192).map_err(ioerr)?;
-                                if t.is_empty() {
-                                    break;
-                                }
+                if self.chunk_left == 0 {
+                    let line = self.conn.read_until(b"\r\n", 256).map_err(ioerr)?;
+                    let s = String::from_utf8_lossy(&line);
+                    let sz = s.split(';').next().unwrap_or("").trim();
+                    let size = u64::from_str_radix(sz, 16)
+                        .map_err(|_| format!("invalid chunk: {:?}", sz))?;
+                    if size == 0 {
+                        loop {
+                            let t = self.conn.read_until(b"\r\n", 8192).map_err(ioerr)?;
+                            if t.is_empty() {
+                                break;
                             }
-                            self.finished = true;
-                            return Ok(0);
                         }
-                        self.chunk_left = size;
-                    }
-                    let want = out.len().min(self.chunk_left as usize);
-                    let n = self.conn.read_some(&mut out[..want]).map_err(ioerr)?;
-                    if n == 0 {
                         self.finished = true;
                         return Ok(0);
                     }
-                    self.chunk_left -= n as u64;
-                    if self.chunk_left == 0 {
-                        let _ = self.conn.read_until(b"\r\n", 2);
-                    }
-                    return Ok(n);
+                    self.chunk_left = size;
                 }
+                let want = out.len().min(self.chunk_left as usize);
+                let n = self.conn.read_some(&mut out[..want]).map_err(ioerr)?;
+                if n == 0 {
+                    self.finished = true;
+                    return Ok(0);
+                }
+                self.chunk_left -= n as u64;
+                if self.chunk_left == 0 {
+                    let _ = self.conn.read_until(b"\r\n", 2);
+                }
+                Ok(n)
             }
         }
     }
@@ -195,9 +182,6 @@ impl Response {
         Ok(out)
     }
 
-    pub fn set_timeout(&self, secs: u64) {
-        self.conn.set_timeout(secs);
-    }
 }
 
 fn default_pin() -> Option<[u8; 32]> {
@@ -318,7 +302,6 @@ fn send_once(
     Ok(Response {
         status,
         headers: hdrs,
-        final_url: format!("{}://{}{}", url.scheme, default_host, url.path),
         conn,
         mode,
         remaining,
@@ -377,8 +360,3 @@ pub fn get(url: &str, headers: &[(String, String)], timeout: u64) -> HttpResult<
     fetch(url, "GET", headers, None, timeout, None)
 }
 
-pub fn post_json(url: &str, json: &str, headers: &[(String, String)], timeout: u64) -> HttpResult<Response> {
-    let mut h = vec![("Content-Type".to_string(), "application/json".to_string())];
-    h.extend_from_slice(headers);
-    fetch(url, "POST", &h, Some(json.as_bytes()), timeout, None)
-}

@@ -67,7 +67,7 @@ fn parse_http_date(s: &str) -> i64 {
     let month = months.iter().position(|m| *m == parts[2]).map(|i| i as i64 + 1).unwrap_or(0);
     let year = parts[3].parse::<i64>().unwrap_or(0);
     let clock: Vec<&str> = parts[4].split(':').collect();
-    let h = clock.get(0).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
+    let h = clock.first().and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
     let mi = clock.get(1).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
     let se = clock.get(2).and_then(|v| v.parse::<i64>().ok()).unwrap_or(0);
     days_from_civil(year, month, day) * 86400 + h * 3600 + mi * 60 + se
@@ -114,7 +114,7 @@ fn request(url: &str, extra: &[(String, String)]) -> Result<httpc::Response, Str
     for (k, v) in extra {
         headers.push((k.clone(), v.clone()));
     }
-    let mut r = httpc::get(url, &headers, 30)?;
+    let r = httpc::get(url, &headers, 30)?;
     absorb(&r.headers);
     Ok(r)
 }

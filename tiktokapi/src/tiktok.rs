@@ -65,8 +65,8 @@ pub fn media_url(info: &Info, quality: &str, format: &str) -> Result<String, Str
     if info.kind == "slideshow" {
         return Err("this post is a slideshow with images, not a video; use /tiktok to get the image URLs or format=mp3 for audio".into());
     }
-    if quality == "low" || quality == "sd" {
-        if !info.play.is_empty() { return Ok(info.play.clone()); }
+    if (quality == "low" || quality == "sd") && !info.play.is_empty() {
+        return Ok(info.play.clone());
     }
     if !info.hdplay.is_empty() {
         return Ok(info.hdplay.clone());

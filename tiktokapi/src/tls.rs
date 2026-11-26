@@ -184,7 +184,8 @@ fn alert_text(payload: &[u8]) -> String {
 }
 
 fn resolve(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Vec<SocketAddr>)>>> = OnceLock::new();
+    type Cache = HashMap<String, (Instant, Vec<SocketAddr>)>;
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let key = format!("{}:{}", host, port);
     if let Ok(m) = cache.lock() {
@@ -270,10 +271,6 @@ impl TlsConn {
         Ok(c)
     }
 
-    pub fn set_timeout(&self, secs: u64) {
-        self.tcp.set_read_timeout(Some(Duration::from_secs(secs))).ok();
-        self.tcp.set_write_timeout(Some(Duration::from_secs(secs))).ok();
-    }
 
     fn set_read_secret(&mut self, secret: &[u8; 32]) {
         let k = tls_expand_label(secret, "key", &[], 32);
@@ -483,8 +480,7 @@ impl TlsConn {
                 break;
             }
             let mtype = data[p];
-            if mtype == 24 && mlen == 1 {
-                if data[p + 4] == 1 {
+            if mtype == 24 && mlen == 1 && data[p + 4] == 1 {
                     let k = tls_expand_label(&self.read_key, "traffic upd", &[], 32);
                     let mut s = [0u8; 32];
                     s.copy_from_slice(&k);
@@ -493,7 +489,6 @@ impl TlsConn {
                     let mut s2 = [0u8; 32];
                     s2.copy_from_slice(&k2);
                     self.set_write_secret(&s2);
-                }
             }
             p += 4 + mlen;
         }
