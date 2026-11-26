@@ -1,6 +1,5 @@
 target/
 *.log
-shorturlapi/shorturls.json
 .DS_Store
 
 youtubeapi/cookies.txt

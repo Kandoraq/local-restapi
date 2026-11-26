@@ -2,10 +2,10 @@
 
 This tutorial takes you from a clean checkout to one successful request against each service. You need a Rust toolchain and `curl`. The services read and write only local files unless a request asks them to fetch a URL.
 
-Build all five binaries first.
+Build all four binaries first.
 
 ```sh
-for d in removewmapi tiktokapi shorturlapi removebgapi youtubeapi; do
+for d in removewmapi tiktokapi removebgapi youtubeapi; do
   cargo build --release --manifest-path "$d/Cargo.toml"
 done
 ```
@@ -52,19 +52,7 @@ curl -X POST http://127.0.0.1:8081/remove-watermark \
 
 Without a box, the service tries to detect the watermark region. Detection is heuristic. For predictable results, pass a box.
 
-## 4. Shorten a URL
-
-Start shorturlapi on port 8083.
-
-```sh
-curl -X POST http://127.0.0.1:8083/shorten \
-  -H 'Content-Type: application/json' \
-  -d '{"url":"https://example.com/a/long/path/that/is/at/least/thirty/chars"}'
-```
-
-The response contains `code` and `short_url`. Open the `short_url` and you will receive a `302` with `Location` set to the original URL. Mappings are saved to `shorturlapi/shorturls.json`.
-
-## 5. Read TikTok metadata
+## 4. Read TikTok metadata
 
 Start tiktokapi on port 8082.
 
@@ -76,7 +64,7 @@ The response includes `kind`. A video post reports `video`. A photo post reports
 
 To download the media, call `/download` with `format=mp4` or `format=mp3`.
 
-## 6. Read YouTube metadata
+## 5. Read YouTube metadata
 
 Start youtubeapi on port 8085.
 

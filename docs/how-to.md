@@ -88,7 +88,3 @@ curl 'http://127.0.0.1:8085/api/search?q=rust&key=a-long-random-string'
 ```
 
 `YT_KEY` is a shared static string, not a per-user token. It keeps casual callers out. It is not an authentication system.
-
-## How to clear stored short URLs
-
-Stop shorturlapi, delete `shorturlapi/shorturls.json`, then start it again. The service recreates an empty store.
