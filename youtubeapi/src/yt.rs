@@ -19,15 +19,6 @@ struct Profile {
 
 const PROFILES: &[Profile] = &[
     Profile {
-        name: "ANDROID_VR",
-        ver: "1.62.27",
-        num: "28",
-        ua: "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip",
-        extra: "\"deviceMake\":\"Oculus\",\"deviceModel\":\"Quest 3\",\"androidSdkVersion\":32,\"osName\":\"Android\",\"osVersion\":\"12\",\"userAgent\":\"com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip\"",
-        referer: "https://www.youtube.com/",
-        keyed: false,
-    },
-    Profile {
         name: "ANDROID",
         ver: "21.44.38",
         num: "3",
@@ -42,6 +33,15 @@ const PROFILES: &[Profile] = &[
         num: "5",
         ua: "com.google.ios.youtube/21.44.3 (iPhone17,2; U; CPU iOS 18_5_0 like Mac OS X;)",
         extra: "\"deviceMake\":\"Apple\",\"deviceModel\":\"iPhone17,2\",\"osName\":\"iPhone\",\"osVersion\":\"18.5.0.22F76\",\"userAgent\":\"com.google.ios.youtube/21.44.3 (iPhone17,2; U; CPU iOS 18_5_0 like Mac OS X;)\"",
+        referer: "https://www.youtube.com/",
+        keyed: false,
+    },
+    Profile {
+        name: "ANDROID_VR",
+        ver: "1.62.27",
+        num: "28",
+        ua: "com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip",
+        extra: "\"deviceMake\":\"Oculus\",\"deviceModel\":\"Quest 3\",\"androidSdkVersion\":32,\"osName\":\"Android\",\"osVersion\":\"12\",\"userAgent\":\"com.google.android.apps.youtube.vr.oculus/1.62.27 (Linux; U; Android 12; GB) gzip\"",
         referer: "https://www.youtube.com/",
         keyed: false,
     },
@@ -597,19 +597,26 @@ fn parse_format(j: &Json, kind: &str) -> Option<Format> {
 fn parse_video(v: &Json, client: &str) -> Option<Video> {
     let sd = v.get("streamingData")?;
     let mut formats: Vec<Format> = Vec::new();
-    if let Some(arr) = sd.get("adaptiveFormats").and_then(|x| x.as_arr()) {
-        for f in arr {
-            let mime = f.get("mimeType").and_then(|x| x.as_str()).unwrap_or("");
-            let kind = if mime.starts_with("audio/") {
-                "audio"
-            } else if mime.starts_with("video/") {
-                "video"
-            } else {
-                continue;
-            };
-            if let Some(x) = parse_format(f, kind) {
-                formats.push(x);
+    for key in ["adaptiveFormats", "formats"] {
+        if let Some(arr) = sd.get(key).and_then(|x| x.as_arr()) {
+            for f in arr {
+                let mime = f.get("mimeType").and_then(|x| x.as_str()).unwrap_or("");
+                let kind = if mime.starts_with("audio/") {
+                    "audio"
+                } else if mime.starts_with("video/") {
+                    "video"
+                } else {
+                    continue;
+                };
+                if let Some(x) = parse_format(f, kind) {
+                    if !formats.iter().any(|e| e.itag == x.itag) {
+                        formats.push(x);
+                    }
+                }
             }
+        }
+        if !formats.is_empty() {
+            break;
         }
     }
     if formats.is_empty() {
@@ -814,6 +821,14 @@ pub fn extract(id: &str) -> Result<Video, String> {
                 if best.as_ref().is_none_or(|b| v.formats.len() > b.formats.len()) {
                     refine_duration(&mut v);
                     best = Some(v);
+                }
+                let enough = best.as_ref().is_some_and(|b| {
+                    b.formats.len() >= 4
+                        && b.formats.iter().any(|f| f.kind == "video")
+                        && b.formats.iter().any(|f| f.kind == "audio")
+                });
+                if enough {
+                    break;
                 }
             }
             Err(e) => errs.push(format!("{}: {}", p.name, e)),
