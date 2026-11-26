@@ -235,7 +235,7 @@ Open `http://<this-device-ip>:8080` in a browser. The dashboard has five pages:
 
 - `/` shows one card per service with status, PID, uptime, endpoints, recent logs, and Start/Stop buttons.
 - `/download` fetches TikTok or YouTube media directly from the APIs and saves it in the browser.
-- `/watch` searches YouTube through `/api/search` and plays a selected result with `<video controls>` using `/api/stream`. A video link or ID can also be pasted directly.
+- `/watch` searches YouTube through `/api/search`, plays a selected result with `<video controls>` using `/api/stream`, and has a playback quality selector. The default is 720p MP4 because most browsers decode H.264 without problems. WebM from `format=best` can be several hundred megabytes and may fail on some devices.
 - `/images` uploads a PNG and applies remove-bg or remove-watermark, then shows the result.
 - `/about` shows the project identity, the developer GitHub profile, repository and license links, and a live table of services with ports, status, PID, and endpoints.
 
