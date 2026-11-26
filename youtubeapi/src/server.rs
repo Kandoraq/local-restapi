@@ -217,8 +217,8 @@ fn extension_for(mime: &str) -> &'static str {
         } else {
             "webm"
         }
-    } else if m.contains("audio/mp4") || m.contains("m4a") {
-        "m4a"
+    } else if m.contains("video/mp4") || m.contains("audio/mp4") || m.contains("m4a") {
+        if m.starts_with("audio/") { "m4a" } else { "mp4" }
     } else if m.contains("audio/mpeg") {
         "mp3"
     } else if m.contains("mpegurl") {
@@ -228,7 +228,7 @@ fn extension_for(mime: &str) -> &'static str {
     } else if m.starts_with("audio/") {
         "m4a"
     } else {
-        "mp4"
+        "bin"
     }
 }
 
