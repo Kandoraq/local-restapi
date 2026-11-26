@@ -23,13 +23,15 @@ const SOURCES={
   youtube:{
     label:'YouTube',
     placeholder:'https://www.youtube.com/watch?v=00000000000',
-    hint:'YouTube serves video and audio as separate streams. Audio downloads as m4a or opus. It does not provide MP3.',
+    hint:'YouTube serves video and audio as separate streams. Pick a resolution or the original container. Audio is m4a or opus, never MP3.',
     presets:[
-      {id:'best',label:'Video, best available',format:'best'},
+      {id:'best',label:'Video, highest resolution',format:'best'},
       {id:'1080',label:'Video, 1080p',format:'1080'},
       {id:'720',label:'Video, 720p',format:'720'},
       {id:'480',label:'Video, 480p',format:'480'},
-      {id:'audio',label:'Audio only (m4a or opus)',format:'audio'}
+      {id:'360',label:'Video, 360p',format:'360'},
+      {id:'webm',label:'Video, WebM container',format:'webm'},
+      {id:'audio',label:'Audio only, m4a or opus',format:'audio'}
     ]
   }
 };
@@ -528,23 +530,23 @@ function Watch(){
         <div className="field narrow">
           <label htmlFor="yt-quality">Playback quality</label>
           <select id="yt-quality" className="input" value=${quality} onChange=${e=>setQuality(e.target.value)}>
-            <option value="360">360p MP4, smallest</option>
-            <option value="480">480p MP4</option>
-            <option value="720">720p MP4, recommended</option>
-            <option value="1080">1080p MP4</option>
-            <option value="mp4">Highest MP4</option>
-            <option value="best">Best available WebM, may be large</option>
-            <option value="audio">Audio only</option>
+            <option value="360">360p, original container</option>
+            <option value="480">480p, original container</option>
+            <option value="720">720p, original container</option>
+            <option value="1080">1080p, original container</option>
+            <option value="best">Highest resolution available</option>
+            <option value="webm">WebM video only</option>
+            <option value="audio">Audio only, m4a or opus</option>
           </select>
         </div>
-        <span className="hint">The player uses H.264 MP4 by default because most browsers decode it without problems.</span>
+        <span className="hint">These are the streams YouTube actually provides. Video and audio come separately.</span>
       </div>
       ${err&&html`<${Alert} kind="err"><span>${err}</span></${Alert}>`}
       <div className="actions-row">
         ${src
           ? html`<video key=${src} ref=${player} className="player" controls playsInline preload="metadata" src=${src}
               onCanPlay=${()=>setState('ready')}
-              onError=${()=>{setState('error');setErr('The browser could not decode this stream. Try another quality, such as 360p or 480p MP4.');}}></video>`
+              onError=${()=>{setState('error');setErr('The browser could not decode this stream. Try a different resolution or container.');}}></video>`
           : html`<div className="player-empty">
               <span className="drop-icon">YT</span>
               <strong>No stream loaded</strong>

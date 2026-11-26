@@ -788,38 +788,13 @@ pub fn probe(id: &str) -> String {
     out
 }
 
-fn refine_duration(v: &mut Video) {
-    if v.live || v.duration_ms <= 0 {
-        return;
-    }
-    let cand = v
-        .formats
-        .iter()
-        .filter(|f| f.kind == "video")
-        .max_by_key(|f| f.height)
-        .or_else(|| v.formats.iter().max_by_key(|f| f.bitrate));
-    let f = match cand {
-        Some(f) => f,
-        None => return,
-    };
-    if let Some(ms) = crate::mp4::probe(&f.url) {
-        if ms > 0 {
-            v.duration_ms_approx = v.duration_ms;
-            v.duration_ms = ms;
-            v.duration = (ms + 500) / 1000;
-            v.duration_source = "container".to_string();
-        }
-    }
-}
-
 pub fn extract(id: &str) -> Result<Video, String> {
     let mut errs = Vec::new();
     let mut best: Option<Video> = None;
     for p in PROFILES {
         match try_player(p, id) {
-            Ok(mut v) => {
+            Ok(v) => {
                 if best.as_ref().is_none_or(|b| v.formats.len() > b.formats.len()) {
-                    refine_duration(&mut v);
                     best = Some(v);
                 }
                 let enough = best.as_ref().is_some_and(|b| {
@@ -838,8 +813,7 @@ pub fn extract(id: &str) -> Result<Video, String> {
         return Ok(v);
     }
     if let Some(j) = html_player(id) {
-        if let Some(mut v) = parse_video(&j, "HTML") {
-            refine_duration(&mut v);
+        if let Some(v) = parse_video(&j, "HTML") {
             return Ok(v);
         }
         let (st, reason) = playability(&j);
