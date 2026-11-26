@@ -42,7 +42,7 @@ pub fn hex_encode(data: &[u8]) -> String {
 #[allow(dead_code)]
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let s: Vec<char> = s.chars().filter(|c| !c.is_whitespace()).collect();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -672,7 +672,7 @@ impl Fe {
         ])
     }
 
-    fn to_bytes(&self) -> [u8; 32] {
+    fn as_bytes(&self) -> [u8; 32] {
         let mut t = self.0;
         let mut c;
         c = t[0] >> 51;
@@ -789,7 +789,7 @@ pub fn x25519(scalar: &[u8; 32], u: &[u8; 32]) -> [u8; 32] {
         std::mem::swap(&mut z2, &mut z3);
     }
 
-    x2.mul(&z2.invert()).to_bytes()
+    x2.mul(&z2.invert()).as_bytes()
 }
 
 #[cfg(test)]

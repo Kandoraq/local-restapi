@@ -811,7 +811,7 @@ pub fn extract(id: &str) -> Result<Video, String> {
     for p in PROFILES {
         match try_player(p, id) {
             Ok(mut v) => {
-                if best.as_ref().map_or(true, |b| v.formats.len() > b.formats.len()) {
+                if best.as_ref().is_none_or(|b| v.formats.len() > b.formats.len()) {
                     refine_duration(&mut v);
                     best = Some(v);
                 }

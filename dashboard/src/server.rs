@@ -1,17 +1,22 @@
-use crate::constants::{SERVICES, PORT};
+use crate::constants::{PORT, SERVICES};
 use crate::pages;
 use crate::process;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
+const ASSET_CSS: &str = include_str!("../assets/app.css");
+const ASSET_JS: &str = include_str!("../assets/app.js");
+const REACT_JS: &str = include_str!("../assets/react.production.min.js");
+const REACT_DOM_JS: &str = include_str!("../assets/react-dom.production.min.js");
+const HTM_JS: &str = include_str!("../assets/htm.umd.js");
+const FAVICON: &str = include_str!("../assets/favicon.svg");
+
 pub fn run() -> std::io::Result<()> {
     let listener = TcpListener::bind(("0.0.0.0", PORT))?;
     println!("dashboard ready at http://0.0.0.0:{}", PORT);
-    for stream in listener.incoming() {
-        if let Ok(s) = stream {
-            thread::spawn(|| handle(s));
-        }
+    for s in listener.incoming().flatten() {
+        thread::spawn(|| handle(s));
     }
     Ok(())
 }
@@ -33,7 +38,7 @@ fn parse_q(q: &str) -> std::collections::HashMap<String, String> {
 
 fn send(stream: &mut TcpStream, code: u16, reason: &str, ct: &str, body: &[u8]) {
     let header = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n",
         code, reason, ct, body.len()
     );
     let _ = stream.write_all(header.as_bytes());
@@ -44,8 +49,8 @@ fn json(stream: &mut TcpStream, code: u16, reason: &str, body: String) {
     send(stream, code, reason, "application/json", body.as_bytes());
 }
 
-fn html(stream: &mut TcpStream, body: String) {
-    send(stream, 200, "OK", "text/html; charset=utf-8", body.as_bytes());
+fn html(stream: &mut TcpStream, code: u16, reason: &str) {
+    send(stream, code, reason, "text/html; charset=utf-8", pages::shell().as_bytes());
 }
 
 fn handle(mut stream: TcpStream) {
@@ -65,25 +70,33 @@ fn handle(mut stream: TcpStream) {
     let query = parse_q(target.split('?').nth(1).unwrap_or(""));
     let req = Req { path, query };
 
-    let host = std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
-
     if req.path.starts_with("/api/") || req.path == "/health" {
         route_api(&mut stream, &req);
         return;
     }
 
-    let body = match req.path.as_str() {
-        "/" | "" => pages::dashboard(&host),
-        "/download" => pages::download(&host),
-        "/watch" => pages::watch(),
-        "/images" => pages::images(&host),
-        "/about" => pages::about(),
-        _ => {
-            json(&mut stream, 404, "Not Found", "{\"error\":\"not found\"}".to_string());
-            return;
-        }
+    let asset = match req.path.as_str() {
+        "/assets/app.css" => Some(("text/css; charset=utf-8", ASSET_CSS)),
+        "/assets/app.js" => Some(("application/javascript; charset=utf-8", ASSET_JS)),
+        "/assets/react.js" => Some(("application/javascript; charset=utf-8", REACT_JS)),
+        "/assets/react-dom.js" => Some(("application/javascript; charset=utf-8", REACT_DOM_JS)),
+        "/assets/htm.js" => Some(("application/javascript; charset=utf-8", HTM_JS)),
+        "/favicon.svg" => Some(("image/svg+xml", FAVICON)),
+        _ => None,
     };
-    html(&mut stream, body);
+    if let Some((ct, body)) = asset {
+        send(&mut stream, 200, "OK", ct, body.as_bytes());
+        return;
+    }
+    if req.path == "/favicon.ico" {
+        send(&mut stream, 204, "No Content", "text/plain", b"");
+        return;
+    }
+
+    match req.path.as_str() {
+        "/" | "/download" | "/watch" | "/images" | "/about" => html(&mut stream, 200, "OK"),
+        _ => html(&mut stream, 404, "Not Found"),
+    }
 }
 
 fn route_api(stream: &mut TcpStream, req: &Req) {
