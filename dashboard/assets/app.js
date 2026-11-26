@@ -33,6 +33,35 @@ const SOURCES={
     ]
   }
 };
+function useGithubProfile(){
+  const [data,setData]=useState(null);
+  const [state,setState]=useState('loading');
+  const alive=useRef(true);
+  async function load(){
+    setState('loading');
+    try{
+      const [user,repos]=await Promise.all([
+        getJson('https://api.github.com/users/Kandoraq'),
+        getJson('https://api.github.com/users/Kandoraq/repos?per_page=100&sort=updated')
+      ]);
+      if(!alive.current) return;
+      setData({user,repos});
+      setState('done');
+    }catch(e){
+      if(alive.current){
+        setData(null);
+        setState('error');
+      }
+    }
+  }
+  useEffect(()=>{
+    alive.current=true;
+    load();
+    return ()=>{alive.current=false;};
+  },[]);
+  return {data,state,reload:load};
+}
+
 const NavCtx=createContext(()=>{});
 const ToastCtx=createContext(()=>{});
 
@@ -54,6 +83,12 @@ function fmtBytes(n){
   let v=n,i=-1;
   do{v=v/1024;i++;}while(v>=1024&&i<units.length-1);
   return (v>=10?v.toFixed(0):v.toFixed(1))+' '+units[i];
+}
+function fmtDate(s){
+  if(!s) return '';
+  const d=new Date(s);
+  if(isNaN(d.getTime())) return '';
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function fmtUptime(s){
   if(!s||s<1) return 'just now';
@@ -417,6 +452,7 @@ function Watch(){
   const [state,setState]=useState('idle');
   const [err,setErr]=useState('');
   const [query,setQuery]=useState('');
+  const [quality,setQuality]=useState('720');
   const [results,setResults]=useState(null);
   const [searchState,setSearchState]=useState('idle');
   const player=useRef(null);
@@ -425,7 +461,7 @@ function Watch(){
     setInput('https://www.youtube.com/watch?v='+id);
     setErr('');
     setState('loading');
-    setSrc(svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format=best'));
+    setSrc(svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format='+encodeURIComponent(quality)));
   }
   function submit(e){
     if(e) e.preventDefault();
@@ -476,12 +512,27 @@ function Watch(){
           <button type="submit" className="btn primary">Play stream</button>
         </div>
       </form>
+      <div className="form-row" style=${{marginTop:'12px'}}>
+        <div className="field narrow">
+          <label htmlFor="yt-quality">Playback quality</label>
+          <select id="yt-quality" className="input" value=${quality} onChange=${e=>setQuality(e.target.value)}>
+            <option value="360">360p MP4, smallest</option>
+            <option value="480">480p MP4</option>
+            <option value="720">720p MP4, recommended</option>
+            <option value="1080">1080p MP4</option>
+            <option value="mp4">Highest MP4</option>
+            <option value="best">Best available WebM, may be large</option>
+            <option value="audio">Audio only</option>
+          </select>
+        </div>
+        <span className="hint">The player uses H.264 MP4 by default because most browsers decode it without problems.</span>
+      </div>
       ${err&&html`<${Alert} kind="err"><span>${err}</span></${Alert}>`}
       <div className="actions-row">
         ${src
           ? html`<video key=${src} ref=${player} className="player" controls playsInline preload="metadata" src=${src}
               onCanPlay=${()=>setState('ready')}
-              onError=${()=>{setState('error');setErr('The stream did not start. Make sure youtubeapi is running on port 8085.');}}></video>`
+              onError=${()=>{setState('error');setErr('The video could not be decoded or loaded. Try a lower quality such as 480p or 720p.');}}></video>`
           : html`<div className="player-empty">
               <span className="drop-icon">YT</span>
               <strong>No stream loaded</strong>
@@ -705,6 +756,9 @@ function Images(){
 
 function About(){
   const {data,err,reload}=useServices();
+  const gh=useGithubProfile();
+  const u=gh.data&&gh.data.user;
+  const repos=gh.data&&gh.data.repos||[];
   return html`<${Fragment}>
     <${PageHead} title="About" sub="What this project is, who made it, and what runs behind the dashboard." />
     <div className="about-hero">
@@ -719,15 +773,6 @@ function About(){
       </section>
       <div className="about-side">
         <section className="panel">
-          <h3>Developer</h3>
-          <p>Built and maintained by Kandoraq.</p>
-          <span className="handle">@Kandoraq</span>
-          <div className="actions-row">
-            <a className="btn ghost sm" href="https://github.com/Kandoraq" target="_blank" rel="noreferrer">View GitHub profile</a>
-            <a className="btn ghost sm" href="https://github.com/Kandoraq?tab=repositories" target="_blank" rel="noreferrer">All repositories</a>
-          </div>
-        </section>
-        <section className="panel">
           <h3>Project details</h3>
           <p>Source, issues, and releases live on GitHub. The code is MIT licensed.</p>
           <div className="actions-row">
@@ -739,6 +784,59 @@ function About(){
         </section>
       </div>
     </div>
+    <section className="panel" style=${{marginBottom:'14px'}}>
+      <div className="page-head" style=${{marginBottom:'12px'}}>
+        <div>
+          <h2>Developer</h2>
+          <p>Loaded from the public GitHub profile. No account or token is used.</p>
+        </div>
+        <button type="button" className="btn ghost sm" onClick=${gh.reload}>Refresh</button>
+      </div>
+      ${gh.state==='loading'&&html`<div className="search-state">Loading GitHub profile...</div>`}
+      ${gh.state==='error'&&html`<${Fragment}>
+        <${Alert} kind="err"><span>GitHub could not be reached. The links below still work.</span></${Alert}>
+        <a className="btn ghost" href="https://github.com/Kandoraq" target="_blank" rel="noreferrer">View profile on GitHub</a>
+      </${Fragment}>`}
+      ${gh.state==='done'&&u&&html`<${Fragment}>
+        <div className="github-profile">
+          <div className="gh-avatar">
+            ${u.avatar_url?html`<img src=${u.avatar_url} alt="GitHub avatar for ${u.login}" loading="lazy" />`:html`<span>${(u.login||'?').slice(0,2).toUpperCase()}</span>`}
+          </div>
+          <div>
+            <div className="gh-top">
+              <span className="gh-name">${u.name||u.login}</span>
+              <span className="gh-login">@${u.login}</span>
+              <a href=${u.html_url} target="_blank" rel="noreferrer">Open profile</a>
+            </div>
+            ${u.bio&&html`<p className="gh-bio">${u.bio}</p>`}
+            <div className="gh-details">
+              ${u.location&&html`<span>${u.location}</span>`}
+              ${u.blog&&html`<a href=${u.blog} target="_blank" rel="noreferrer">${u.blog}</a>`}
+              ${fmtDate(u.created_at)&&html`<span>Joined ${fmtDate(u.created_at)}</span>`}
+            </div>
+            <div className="gh-stats">
+              <span className="gh-stat"><b>${u.public_repos}</b><span>Public repos</span></span>
+              <span className="gh-stat"><b>${u.followers}</b><span>Followers</span></span>
+              <span className="gh-stat"><b>${u.following}</b><span>Following</span></span>
+              <span className="gh-stat"><b>${u.public_gists}</b><span>Gists</span></span>
+            </div>
+          </div>
+        </div>
+        ${repos.length>0&&html`<${Fragment}>
+          <div className="search-head">
+            <h3>Public repositories</h3>
+            <span className="hint">${repos.length} shown</span>
+          </div>
+          <div className="repo-list">
+            ${repos.map(r=>html`<div className="repo-item" key=${r.id}>
+              <a href=${r.html_url} target="_blank" rel="noreferrer">${r.name}</a>
+              ${r.language&&html`<span className="repo-lang">${r.language}</span>`}
+              ${fmtDate(r.updated_at)&&html`<span className="repo-date">Updated ${fmtDate(r.updated_at)}</span>`}
+            </div>`)}
+          </div>
+        </${Fragment}>`}
+      </${Fragment}>`}
+    </section>
     <section className="panel">
       <div className="page-head" style=${{marginBottom:'12px'}}>
         <div>
