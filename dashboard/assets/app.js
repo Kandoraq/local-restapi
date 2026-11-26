@@ -456,12 +456,24 @@ function Watch(){
   const [results,setResults]=useState(null);
   const [searchState,setSearchState]=useState('idle');
   const player=useRef(null);
-  function playId(id){
+  async function playId(id){
     if(!id) return;
-    setInput('https://www.youtube.com/watch?v='+id);
+    const url=svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format='+encodeURIComponent(quality));
     setErr('');
     setState('loading');
-    setSrc(svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format='+encodeURIComponent(quality)));
+    try{
+      const probe=await fetch(url,{headers:{Range:'bytes=0-0'},cache:'no-store'});
+      if(!probe.ok) throw new Error(await errorFrom(probe));
+      const ct=probe.headers.get('content-type')||'';
+      if(!ct.startsWith('video/')&&!ct.startsWith('audio/')) throw new Error('Unexpected content type: '+ct);
+      await probe.arrayBuffer();
+    }catch(e){
+      setState('error');
+      setErr(e.message);
+      return;
+    }
+    setInput('https://www.youtube.com/watch?v='+id);
+    setSrc(url);
   }
   function submit(e){
     if(e) e.preventDefault();
@@ -532,7 +544,7 @@ function Watch(){
         ${src
           ? html`<video key=${src} ref=${player} className="player" controls playsInline preload="metadata" src=${src}
               onCanPlay=${()=>setState('ready')}
-              onError=${()=>{setState('error');setErr('The video could not be decoded or loaded. Try a lower quality such as 480p or 720p.');}}></video>`
+              onError=${()=>{setState('error');setErr('The browser could not decode this stream. Try another quality, such as 360p or 480p MP4.');}}></video>`
           : html`<div className="player-empty">
               <span className="drop-icon">YT</span>
               <strong>No stream loaded</strong>
