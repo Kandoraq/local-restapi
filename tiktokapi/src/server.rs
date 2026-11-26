@@ -60,7 +60,7 @@ fn handle(mut stream: TcpStream) {
     }
 
     let content_length: usize = headers.get("content-length").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let mut body = read_body_limited(&mut reader, content_length.min(MAX_BODY));
+    let body = read_body_limited(&mut reader, content_length.min(MAX_BODY));
 
     let path = target.split('?').next().unwrap_or(target);
     let query = target.split('?').nth(1).unwrap_or("");

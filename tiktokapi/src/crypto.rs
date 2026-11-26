@@ -39,10 +39,9 @@ pub fn hex_encode(data: &[u8]) -> String {
     s
 }
 
-#[allow(dead_code)]
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let s: Vec<char> = s.chars().filter(|c| !c.is_whitespace()).collect();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -672,7 +671,7 @@ impl Fe {
         ])
     }
 
-    fn to_bytes(&self) -> [u8; 32] {
+    fn to_bytes(self) -> [u8; 32] {
         let mut t = self.0;
         let mut c;
         c = t[0] >> 51;
