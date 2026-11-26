@@ -153,6 +153,72 @@ fn parse_server_hello(body: &[u8]) -> io::Result<([u8; 32], u16)> {
     }
 }
 
+fn der_tlv<'a>(data: &'a [u8], pos: &mut usize) -> Option<(u8, &'a [u8])> {
+    if *pos + 2 > data.len() {
+        return None;
+    }
+    let tag = data[*pos];
+    let mut len = data[*pos + 1] as usize;
+    let mut head = 2;
+    if len & 0x80 != 0 {
+        let n = len & 0x7f;
+        if n == 0 || n > 4 || *pos + 2 + n > data.len() {
+            return None;
+        }
+        len = 0;
+        for i in 0..n {
+            len = (len << 8) | data[*pos + 2 + i] as usize;
+        }
+        head += n;
+    }
+    if *pos + head + len > data.len() {
+        return None;
+    }
+    let value = &data[*pos + head..*pos + head + len];
+    *pos += head + len;
+    Some((tag, value))
+}
+
+fn spki_from_der(cert: &[u8]) -> Option<Vec<u8>> {
+    let mut p = 0;
+    let (tag, cert_seq) = der_tlv(cert, &mut p)?;
+    if tag != 0x30 {
+        return None;
+    }
+    let mut q = 0;
+    let (tag, tbs) = der_tlv(cert_seq, &mut q)?;
+    if tag != 0x30 {
+        return None;
+    }
+    let mut r = 0;
+    let mut first = true;
+    while r < tbs.len() {
+        let start = r;
+        let (t, value) = der_tlv(tbs, &mut r)?;
+        if first && t == 0xa0 {
+            first = false;
+            continue;
+        }
+        first = false;
+        if t != 0x30 || value.len() < 8 {
+            continue;
+        }
+        let mut inner = 0;
+        let (alg, _) = match der_tlv(value, &mut inner) {
+            Some(v) => v,
+            None => continue,
+        };
+        let (bit, _) = match der_tlv(value, &mut inner) {
+            Some(v) => v,
+            None => continue,
+        };
+        if alg == 0x30 && bit == 0x03 && inner == value.len() {
+            return Some(tbs[start..r].to_vec());
+        }
+    }
+    None
+}
+
 fn leaf_cert_from_cert_msg(body: &[u8]) -> Option<Vec<u8>> {
     if body.is_empty() {
         return None;
@@ -365,12 +431,15 @@ impl TlsConn {
                     }
                     11 => {
                         transcript.extend_from_slice(&msg);
-                        if let Some(expected) = pin {
-                            let leaf = leaf_cert_from_cert_msg(body)
-                                .ok_or_else(|| bad("unreadable certificate"))?;
-                            if sha256(&leaf) != expected {
-                                return Err(bad("TLS certificate pin mismatch"));
-                            }
+                        let leaf = leaf_cert_from_cert_msg(body)
+                            .ok_or_else(|| bad("unreadable certificate"))?;
+                        let spki = spki_from_der(&leaf)
+                            .ok_or_else(|| bad("certificate has no public key info"))?;
+                        let expected = pin.ok_or_else(|| {
+                            bad("TLS certificate pin is required but not configured")
+                        })?;
+                        if sha256(&spki) != expected {
+                            return Err(bad("TLS certificate pin mismatch"));
                         }
                     }
                     20 => {
@@ -597,5 +666,41 @@ impl TlsConn {
     #[allow(dead_code)]
     pub fn shutdown(&mut self) {
         let _ = self.tcp.shutdown(std::net::Shutdown::Both);
+    }
+}
+
+#[cfg(test)]
+mod pin_tests {
+    use super::spki_from_der;
+
+    fn tlv(tag: u8, value: &[u8]) -> Vec<u8> {
+        let mut out = vec![tag, value.len() as u8];
+        out.extend_from_slice(value);
+        out
+    }
+
+    #[test]
+    fn extracts_spki_from_der() {
+        let alg = tlv(0x30, &tlv(0x06, &[1, 2, 3]));
+        let bit = tlv(0x03, &[0, 1, 2, 3]);
+        let mut spki = alg.clone();
+        spki.extend_from_slice(&bit);
+        let spki = tlv(0x30, &spki);
+        let mut tbs = tlv(0x02, &[1]);
+        tbs.extend_from_slice(&spki);
+        let tbs = tlv(0x30, &tbs);
+        let mut cert = tbs.clone();
+        cert.extend_from_slice(&tlv(0x30, &[]));
+        let cert = tlv(0x30, &cert);
+        assert_eq!(spki_from_der(&cert), Some(spki));
+    }
+
+    #[test]
+    fn rejects_cert_without_spki() {
+        let tbs = tlv(0x30, &tlv(0x02, &[1]));
+        let mut cert = tbs.clone();
+        cert.extend_from_slice(&tlv(0x30, &[]));
+        let cert = tlv(0x30, &cert);
+        assert_eq!(spki_from_der(&cert), None);
     }
 }

@@ -1,6 +1,5 @@
 use crate::tls::TlsConn;
 use std::io;
-use std::sync::OnceLock;
 use std::time::Duration;
 
 pub type HttpResult<T> = Result<T, String>;
@@ -184,20 +183,45 @@ impl Response {
 
 }
 
-fn default_pin() -> Option<[u8; 32]> {
-    static P: OnceLock<Option<[u8; 32]>> = OnceLock::new();
-    *P.get_or_init(|| {
-        std::env::var("TLS_PIN_SHA256").ok().and_then(|s| {
-            let v = crate::crypto::hex_decode(&s)?;
-            if v.len() == 32 {
-                let mut a = [0u8; 32];
-                a.copy_from_slice(&v);
-                Some(a)
-            } else {
-                None
-            }
-        })
-    })
+fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
+    if let Ok(v) = std::env::var("TLS_PIN_SHA256") {
+        let bytes = crate::crypto::hex_decode(&v)
+            .ok_or_else(|| "TLS_PIN_SHA256 is not valid hex".to_string())?;
+        if bytes.len() != 32 {
+            return Err("TLS_PIN_SHA256 must be 32 bytes".to_string());
+        }
+        let mut a = [0u8; 32];
+        a.copy_from_slice(&bytes);
+        return Ok(Some(a));
+    }
+    let google = "9757a339075f3299e0bb4083a9a0f39bfbeaba31f4b4418031423367d9f2e0b3";
+    let gvideo = "2b6a8479c5aa670a84304993dc378c261e4ce6044dc13b279574905faa0e031e";
+    let tikwm = "555dd530c18a2ef14d9249cd6968947d25841ba69400c7e57070765e4443a745";
+    let builtin = if host.ends_with(".googlevideo.com") {
+        gvideo
+    } else if host.ends_with(".youtube.com") || host == "youtube.com"
+        || host.ends_with(".ytimg.com") || host == "ytimg.com"
+        || host.ends_with(".googleusercontent.com")
+    {
+        google
+    } else if host.ends_with(".tikwm.com") || host == "tikwm.com" {
+        tikwm
+    } else {
+        ""
+    };
+    if !builtin.is_empty() {
+        let bytes = crate::crypto::hex_decode(builtin).ok_or_else(|| "bad builtin pin".to_string())?;
+        let mut a = [0u8; 32];
+        a.copy_from_slice(&bytes);
+        return Ok(Some(a));
+    }
+    if std::env::var("TLS_ALLOW_UNPINNED").map(|v| v == "1").unwrap_or(false) {
+        return Ok(None);
+    }
+    Err(format!(
+        "no TLS pin for {}. Set TLS_PIN_SHA256 to the SHA-256 of the server SPKI, or TLS_ALLOW_UNPINNED=1 to allow unverified TLS",
+        host
+    ))
 }
 
 fn send_once(
@@ -208,7 +232,10 @@ fn send_once(
     timeout: u64,
     pin: Option<[u8; 32]>,
 ) -> HttpResult<Response> {
-    let pin = pin.or_else(default_pin);
+    let pin = match pin {
+        Some(p) => Some(p),
+        None => default_pin(&url.host)?,
+    };
     let mut conn = TlsConn::connect(&url.host, url.port, pin, timeout).map_err(ioerr)?;
 
     let mut req = String::new();
