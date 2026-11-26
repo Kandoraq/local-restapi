@@ -235,9 +235,9 @@ Open `http://<this-device-ip>:8080` in a browser. The dashboard has five pages:
 
 - `/` shows one card per service with status, PID, uptime, endpoints, recent logs, and Start/Stop buttons.
 - `/download` fetches TikTok or YouTube media directly from the APIs and saves it in the browser.
-- `/watch` plays a YouTube stream directly with `<video controls>` using `/api/stream`.
+- `/watch` searches YouTube through `/api/search` and plays a selected result with `<video controls>` using `/api/stream`. A video link or ID can also be pasted directly.
 - `/images` uploads a PNG and applies remove-bg or remove-watermark, then shows the result.
-- `/about` shows the repository, license, and developer links.
+- `/about` shows the project identity, the developer GitHub profile, repository and license links, and a live table of services with ports, status, PID, and endpoints.
 
 The interface is built with React 18. React, React DOM, and htm are vendored under `dashboard/assets/` and embedded into the Rust binary with `include_str!`. There is no Node.js build step and no Node.js runtime dependency. Rust serves the HTML shell and the assets; the browser runs React as plain UMD scripts.
 

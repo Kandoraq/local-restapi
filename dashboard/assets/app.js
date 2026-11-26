@@ -416,7 +416,17 @@ function Watch(){
   const [src,setSrc]=useState('');
   const [state,setState]=useState('idle');
   const [err,setErr]=useState('');
+  const [query,setQuery]=useState('');
+  const [results,setResults]=useState(null);
+  const [searchState,setSearchState]=useState('idle');
   const player=useRef(null);
+  function playId(id){
+    if(!id) return;
+    setInput('https://www.youtube.com/watch?v='+id);
+    setErr('');
+    setState('loading');
+    setSrc(svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format=best'));
+  }
   function submit(e){
     if(e) e.preventDefault();
     const id=parseId(input);
@@ -425,9 +435,26 @@ function Watch(){
       setState('error');
       return;
     }
+    playId(id);
+  }
+  async function search(e){
+    if(e) e.preventDefault();
+    const q=query.trim();
+    if(!q){
+      setErr('Type a word or phrase to search.');
+      return;
+    }
     setErr('');
-    setState('loading');
-    setSrc(svc(8085,'/api/stream?v='+encodeURIComponent(id)+'&format=best'));
+    setResults(null);
+    setSearchState('loading');
+    try{
+      const body=await getJson(svc(8085,'/api/search?q='+encodeURIComponent(q)));
+      setResults(body.results||[]);
+      setSearchState('done');
+    }catch(e2){
+      setErr(e2.message);
+      setSearchState('error');
+    }
   }
   useEffect(()=>{
     if(!src) return;
@@ -437,7 +464,7 @@ function Watch(){
     if(p&&p.catch) p.catch(()=>{});
   },[src]);
   return html`<${Fragment}>
-    <${PageHead} title="Watch" sub="Play a YouTube stream directly in this page." />
+    <${PageHead} title="Watch" sub="Search YouTube or paste a link, then play the stream here." />
     <div className="panel">
       <form onSubmit=${submit}>
         <div className="form-row">
@@ -458,11 +485,47 @@ function Watch(){
           : html`<div className="player-empty">
               <span className="drop-icon">YT</span>
               <strong>No stream loaded</strong>
-              <span className="hint">Paste a link above to play the video stream here.</span>
+              <span className="hint">Search below or paste a link above to play the video stream here.</span>
             </div>`}
       </div>
       <p className="hint" role="status">${state==='loading'?'Loading stream...':state==='ready'?'Playing. Use the player controls for fullscreen and scrubbing.':''}</p>
-      <div className="actions-row"><span className="hint">YouTube sends video and audio as separate streams. This player shows video only. Use Download for the audio track.</span></div>
+    </div>
+    <div className="panel" style=${{marginTop:'14px'}}>
+      <h2>Search YouTube</h2>
+      <p>Results come from the local YouTube API. Pick one to play it above.</p>
+      <form className="search-row" onSubmit=${search}>
+        <div className="field">
+          <label htmlFor="yt-search">Search term</label>
+          <input id="yt-search" className="input" type="search" value=${query} placeholder="Try a song, topic, or channel"
+            autoComplete="off" onInput=${e=>setQuery(e.target.value)} />
+        </div>
+        <button type="submit" className="btn stop" disabled=${searchState==='loading'}>${searchState==='loading'?html`<${Fragment}><${Spinner} /> Searching</${Fragment}>`:'Search'}</button>
+      </form>
+      ${searchState==='idle'&&html`<div className="search-state">Search results appear here.</div>`}
+      ${searchState==='loading'&&html`<div className="search-results" aria-busy="true">${[0,1,2,3].map(i=>html`<div className="skel" key=${i}></div>`)}</div>`}
+      ${searchState==='error'&&html`<div className="search-state">Search failed. Check that youtubeapi is running on port 8085.</div>`}
+      ${searchState==='done'&&results&&html`<${Fragment}>
+        <div className="search-head">
+          <h3>${results.length} result${results.length===1?'':'s'}</h3>
+          <span className="hint">Click a card to play it in the player above.</span>
+        </div>
+        ${results.length===0
+          ? html`<div className="search-state">No results for this search. Try different words.</div>`
+          : html`<div className="search-results">
+              ${results.map(v=>html`<button type="button" className="vcard" key=${v.id} onClick=${()=>playId(v.id)}>
+                <span className="vthumb">
+                  ${v.thumbnail&&html`<img src=${v.thumbnail} alt="" loading="lazy" />`}
+                  ${v.duration&&html`<span className="vdur">${v.duration}</span>`}
+                </span>
+                <span className="vmeta">
+                  <span className="vtitle">${v.title}</span>
+                  <span className="vauthor">${v.author}${v.verified?' ✓':''}${v.live?html`<span className="vtag">LIVE</span>`:''}</span>
+                  <span className="vstats">${[v.views,v.published].filter(Boolean).join(' · ')}</span>
+                </span>
+              </button>`)}
+            </div>`}
+      </${Fragment}>`}
+      <div className="actions-row"><span className="hint">YouTube sends video and audio as separate streams. The player shows video only. Use Download for the audio track.</span></div>
     </div>
   </${Fragment}>`;
 }
@@ -641,29 +704,66 @@ function Images(){
 }
 
 function About(){
+  const {data,err,reload}=useServices();
   return html`<${Fragment}>
-    <${PageHead} title="About" sub="A private collection of local REST APIs with a browser control panel." />
-    <div className="grid-2">
-      <section className="panel">
-        <h2>Repository</h2>
-        <p>Source code, issues, and release notes.</p>
-        <a className="btn ghost" href="https://github.com/Kandoraq/local-restapi" target="_blank" rel="noreferrer">Open repository</a>
+    <${PageHead} title="About" sub="What this project is, who made it, and what runs behind the dashboard." />
+    <div className="about-hero">
+      <section className="identity">
+        <span className="kicker">Local REST API collection</span>
+        <h2>local-restapi</h2>
+        <p>Four small APIs for video, audio, and images, plus one browser dashboard to run them. Everything runs on this device with no cloud service and no Node.js in the build or runtime.</p>
+        <div className="identity-links">
+          <a href="https://github.com/Kandoraq/local-restapi" target="_blank" rel="noreferrer">Repository</a>
+          <a href="https://github.com/Kandoraq" target="_blank" rel="noreferrer">Developer profile</a>
+        </div>
       </section>
-      <section className="panel">
-        <h2>License</h2>
-        <p>Released under the MIT license.</p>
-        <a className="btn ghost" href="https://github.com/Kandoraq/local-restapi/blob/main/LICENSE" target="_blank" rel="noreferrer">Read LICENSE</a>
-      </section>
-      <section className="panel">
-        <h2>Developer</h2>
-        <p>Built and maintained by Kandoraq.</p>
-        <a className="btn ghost" href="https://github.com/Kandoraq" target="_blank" rel="noreferrer">GitHub profile</a>
-      </section>
-      <section className="panel">
-        <h2>Stack</h2>
-        <p>Rust for the server and the four APIs. React 18 for this interface. No Node at build time or runtime.</p>
-      </section>
+      <div className="about-side">
+        <section className="panel">
+          <h3>Developer</h3>
+          <p>Built and maintained by Kandoraq.</p>
+          <span className="handle">@Kandoraq</span>
+          <div className="actions-row">
+            <a className="btn ghost sm" href="https://github.com/Kandoraq" target="_blank" rel="noreferrer">View GitHub profile</a>
+            <a className="btn ghost sm" href="https://github.com/Kandoraq?tab=repositories" target="_blank" rel="noreferrer">All repositories</a>
+          </div>
+        </section>
+        <section className="panel">
+          <h3>Project details</h3>
+          <p>Source, issues, and releases live on GitHub. The code is MIT licensed.</p>
+          <div className="actions-row">
+            <a className="btn ghost sm" href="https://github.com/Kandoraq/local-restapi" target="_blank" rel="noreferrer">Repository</a>
+            <a className="btn ghost sm" href="https://github.com/Kandoraq/local-restapi/blob/main/LICENSE" target="_blank" rel="noreferrer">MIT license</a>
+            <a className="btn ghost sm" href="https://github.com/Kandoraq/local-restapi/issues" target="_blank" rel="noreferrer">Issues</a>
+          </div>
+          <div className="stack-list"><span>Rust</span><span>React 18</span><span>No Node.js</span><span>Private repo</span></div>
+        </section>
+      </div>
     </div>
+    <section className="panel">
+      <div className="page-head" style=${{marginBottom:'12px'}}>
+        <div>
+          <h2>Running services</h2>
+          <p>Fetched live from the dashboard. Endpoints below are the ones each service exposes.</p>
+        </div>
+        <button type="button" className="btn ghost sm" onClick=${reload}>Refresh</button>
+      </div>
+      ${err&&!data&&html`<${Alert} kind="err"><span>Cannot load service data: ${err}</span></${Alert}>`}
+      ${!data&&!err&&html`<div className="search-state">Loading services...</div>`}
+      ${data&&html`<div style=${{overflowX:'auto'}}>
+        <table className="svc-table">
+          <thead><tr><th>Service</th><th>Port</th><th>Status</th><th>PID</th><th>Endpoints</th></tr></thead>
+          <tbody>
+            ${data.map(s=>html`<tr key=${s.name}>
+              <td><code>${s.name}</code></td>
+              <td><code>${s.port}</code></td>
+              <td><span className=${'dot '+(s.state==='running'?'on':s.state==='unhealthy'?'warn':'')}></span>${STATE_LABEL[s.state]||s.state}</td>
+              <td><code>${s.pid===null?'-':s.pid}</code></td>
+              <td><code>${s.endpoints}</code></td>
+            </tr>`)}
+          </tbody>
+        </table>
+      </div>`}
+    </section>
   </${Fragment}>`;
 }
 
