@@ -24,6 +24,7 @@ A collection of small REST services written in Rust. Every service is its own bi
 - [Configuration](#configuration)
 - [Security notes](#security-notes)
 - [Design decisions](#design-decisions)
+- [Security policy](SECURITY.md)
 - [License](#license)
 
 ## Quick start
