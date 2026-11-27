@@ -4,9 +4,9 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org)
-[![Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](Cargo.toml)
+[![Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](https://github.com/Kandoraq/local-restapi)
 
-A collection of small REST services written in Rust. Every service is its own binary, listens on its own port, and builds with no third-party crates.
+A collection of small REST services written in Rust. Every service is its own binary, listens on its own port, and builds with no third-party crates. A browser dashboard runs on port 8080 and controls the other four.
 
 | Service | Port | Purpose |
 | --- | --- | --- |
@@ -26,16 +26,17 @@ A collection of small REST services written in Rust. Every service is its own bi
 - [Security notes](#security-notes)
 - [Design decisions](#design-decisions)
 - [Security policy](SECURITY.md)
+- [Developer](https://github.com/Kandoraq)
 - [License](#license)
 
 ## Quick start
 
 Requirements: a Rust toolchain and `curl`.
 
-Build all four binaries:
+Build all five binaries:
 
 ```sh
-for d in removewmapi tiktokapi removebgapi youtubeapi; do
+for d in dashboard removewmapi tiktokapi removebgapi youtubeapi; do
   cargo build --release --manifest-path "$d/Cargo.toml"
 done
 ```
@@ -211,7 +212,7 @@ Some codec combinations need `-c:v copy -c:a aac` instead.
 curl -r 0-99 'http://127.0.0.1:8085/api/stream?v=VIDEO_ID&format=best' -o first-100.bin
 ```
 
-The upstream decides whether to answer `206`.
+The service opens the upstream once without a `Range` header and serves the requested byte range from that response. A valid range returns `206`, and the `Content-Length` matches the bytes actually sent.
 
 ### Restrict youtubeapi access
 
@@ -284,13 +285,13 @@ The other services bind to `0.0.0.0`.
 
 ## Tests
 
+Run the tests for one crate from the repository root:
+
 ```sh
-for d in removewmapi tiktokapi removebgapi youtubeapi; do
-  cargo test --manifest-path "$d/Cargo.toml"
-done
+cargo test --manifest-path tiktokapi/Cargo.toml
 ```
 
-`tiktokapi` passes `cargo clippy` with no warnings. The other services still report style warnings.
+To check every crate, run the same command over the five manifests. `cargo clippy -- -D warnings` is clean in all five as well. The image services have no unit tests; their PNG decoder is exercised through real requests. `youtubeapi` has the largest test set, including ChaCha20-Poly1305 and X25519 known-answer vectors.
 
 ## License
 
