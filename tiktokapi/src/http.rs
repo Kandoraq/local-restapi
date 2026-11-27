@@ -125,7 +125,17 @@ fn number(s: &str, fallback: u64) -> u64 {
 
 pub fn get_text(url: &str, max_size: &str, timeout: &str) -> Result<String, String> {
     let mut r = request(url, &[], number(timeout, 30))?;
-    let bytes = r.read_to_end(number(max_size, 10 * 1024 * 1024) as usize)?;
+    let raw = r.read_to_end(number(max_size, 10 * 1024 * 1024) as usize)?;
+    let enc = r.header("content-encoding").unwrap_or("").to_ascii_lowercase();
+    let bytes = if enc.contains("gzip") {
+        crate::crypto::inflate_gzip(&raw).map_err(|e| format!("gzip: {}", e))?
+    } else if enc.contains("deflate") {
+        crate::crypto::inflate_zlib(&raw)
+            .or_else(|_| crate::crypto::inflate_deflate(&raw))
+            .map_err(|e| format!("deflate: {}", e))?
+    } else {
+        raw
+    };
     Ok(String::from_utf8_lossy(&bytes).to_string())
 }
 

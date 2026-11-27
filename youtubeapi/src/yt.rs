@@ -432,7 +432,7 @@ fn visitor_data() -> Option<String> {
     ];
     let mut r = httpc::get(HOME_URL, &headers, 30).ok()?;
     absorb_cookies(&r.headers);
-    let body = r.read_to_end(3_000_000).ok()?;
+    let body = r.read_body_bytes().ok()?;
     let txt = String::from_utf8_lossy(&body);
     let v = extract_json_string(&txt, "visitorData")?;
     if let Ok(mut slot) = session().visitor.lock() {
@@ -705,7 +705,7 @@ fn html_player(id: &str) -> Option<Json> {
     ];
     let mut r = httpc::get(&url, &headers, 30).ok()?;
     absorb_cookies(&r.headers);
-    let body = r.read_to_end(6_000_000).ok()?;
+    let body = r.read_body_bytes().ok()?;
     let txt = String::from_utf8_lossy(&body);
     let obj = extract_balanced_object(&txt, "ytInitialPlayerResponse")?;
     json::parse(&obj).ok()
@@ -754,7 +754,7 @@ fn try_player(p: &Profile, id: &str) -> Result<Video, String> {
     if r.status != 200 {
         return Err(format!("http {}", r.status));
     }
-    let raw = r.read_to_end(6_000_000)?;
+    let raw = r.read_body_bytes()?;
     let txt = String::from_utf8_lossy(&raw);
     let j = json::parse(&txt)?;
     let (st, reason) = playability(&j);
@@ -1069,7 +1069,7 @@ pub fn search(q: &str) -> Result<Vec<SearchItem>, String> {
     if r.status != 200 {
         return Err(format!("search HTTP {}", r.status));
     }
-    let raw = r.read_to_end(8_000_000)?;
+    let raw = r.read_body_bytes()?;
     let txt = String::from_utf8_lossy(&raw);
     let j = json::parse(&txt)?;
     let mut found = Vec::new();

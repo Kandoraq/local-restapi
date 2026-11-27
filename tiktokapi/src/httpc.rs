@@ -2,6 +2,37 @@ use crate::tls::TlsConn;
 use std::io;
 use std::time::Duration;
 
+use std::collections::HashMap;
+use std::sync::LazyLock;
+use std::sync::Mutex;
+
+static COOKIE_JAR: LazyLock<Mutex<HashMap<String, Vec<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn cookie_header_for(host: &str) -> Option<String> {
+    let jar = COOKIE_JAR.lock().unwrap_or_else(|e| e.into_inner());
+    let cookies = jar.get(host)?;
+    if cookies.is_empty() { None } else { Some(cookies.join("; ")) }
+}
+
+fn store_cookies(host: &str, headers: &[(String, String)]) {
+    for (k, v) in headers {
+        if k.eq_ignore_ascii_case("set-cookie") {
+            if let Some(nv) = v.split(';').next() {
+                let nv = nv.trim();
+                if !nv.is_empty() {
+                    let name = nv.split('=').next().unwrap_or("").trim().to_string();
+                    let mut jar = COOKIE_JAR.lock().unwrap_or_else(|e| e.into_inner());
+                    let entry = jar.entry(host.to_string()).or_default();
+                    if !name.is_empty() {
+                        entry.retain(|c| !c.starts_with(&format!("{}=", name)));
+                    }
+                    entry.push(nv.to_string());
+                }
+            }
+        }
+    }
+}
+
 pub type HttpResult<T> = Result<T, String>;
 
 pub const USER_AGENT: &str = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
@@ -180,7 +211,6 @@ impl Response {
         }
         Ok(out)
     }
-
 }
 
 fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
@@ -195,10 +225,9 @@ fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
         return Ok(Some(a));
     }
     let google = "9757a339075f3299e0bb4083a9a0f39bfbeaba31f4b4418031423367d9f2e0b3";
-    let gvideo = "2b6a8479c5aa670a84304993dc378c261e4ce6044dc13b279574905faa0e031e";
     let tikwm = "555dd530c18a2ef14d9249cd6968947d25841ba69400c7e57070765e4443a745";
     let builtin = if host.ends_with(".googlevideo.com") {
-        gvideo
+        ""
     } else if host.ends_with(".youtube.com") || host == "youtube.com"
         || host.ends_with(".ytimg.com") || host == "ytimg.com"
         || host.ends_with(".googleusercontent.com")
@@ -214,6 +243,9 @@ fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
         let mut a = [0u8; 32];
         a.copy_from_slice(&bytes);
         return Ok(Some(a));
+    }
+    if host.ends_with(".googlevideo.com") || host == "googlevideo.com" {
+        return Ok(None);
     }
     if std::env::var("TLS_ALLOW_UNPINNED").map(|v| v == "1").unwrap_or(false) {
         return Ok(None);
@@ -248,7 +280,13 @@ fn send_once(
     } else {
         format!("{}:{}", url.host, url.port)
     };
-    let has = |n: &str| headers.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
+    let mut all_headers: Vec<(String, String)> = headers.to_vec();
+    if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("cookie")) {
+        if let Some(c) = cookie_header_for(&url.host) {
+            all_headers.push(("Cookie".to_string(), c));
+        }
+    }
+    let has = |n: &str| all_headers.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
     if !has("host") {
         req.push_str("Host: ");
         req.push_str(&default_host);
@@ -260,7 +298,7 @@ fn send_once(
         req.push_str("\r\n");
     }
     if !has("accept-encoding") {
-        req.push_str("Accept-Encoding: identity\r\n");
+        req.push_str("Accept-Encoding: gzip, deflate\r\n");
     }
     if !has("connection") {
         req.push_str("Connection: close\r\n");
@@ -315,6 +353,8 @@ fn send_once(
         .map(|v| v.to_ascii_lowercase().contains("chunked"))
         .unwrap_or(false);
     let cl = header_value(&hdrs, "content-length").and_then(|v| v.trim().parse::<u64>().ok());
+
+    store_cookies(&url.host, &hdrs);
 
     let (mode, remaining) = if no_body {
         (Mode::None, 0)
