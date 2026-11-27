@@ -368,6 +368,7 @@ impl TlsConn {
         let mut c_hs: Option<[u8; 32]> = None;
         let mut s_hs: Option<[u8; 32]> = None;
         let mut cert_verified = false;
+        let mut cert_verify_seen = false;
 
         loop {
             let (rtype, payload) = self.read_record()?;
@@ -440,9 +441,19 @@ impl TlsConn {
                         }
                         cert_verified = true;
                     }
+                    15 => {
+                        transcript.extend_from_slice(&msg);
+                        if !cert_verified || body.len() < 8 {
+                            return Err(bad("invalid CertificateVerify"));
+                        }
+                        cert_verify_seen = true;
+                    }
                     20 => {
                         if !cert_verified {
                             return Err(bad("server sent no verified certificate"));
+                        }
+                        if !cert_verify_seen {
+                            return Err(bad("server sent no CertificateVerify"));
                         }
                         let shs = s_hs.ok_or_else(|| bad("invalid handshake order"))?;
                         let fk = tls_expand_label(&shs, "finished", &[], 32);
