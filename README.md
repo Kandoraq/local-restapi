@@ -6,7 +6,7 @@
 [![Rust](https://img.shields.io/badge/language-Rust-orange.svg)](https://www.rust-lang.org)
 [![Dependencies](https://img.shields.io/badge/dependencies-none-green.svg)](https://github.com/Kandoraq/local-restapi)
 
-A collection of small REST services written in Rust. Every service is its own binary, listens on its own port, and builds with no third-party crates. A browser dashboard runs on port 8080 and controls the other four.
+A collection of small REST services written in Rust. Every service is its own binary, listens on its own port, and builds with no third-party crates. A browser dashboard runs on port 8080 and controls the other four. This project was developed together with OpenCode.
 
 | Service | Port | Purpose |
 | --- | --- | --- |
