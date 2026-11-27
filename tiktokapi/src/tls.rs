@@ -367,6 +367,7 @@ impl TlsConn {
         let mut hs_secret: Option<[u8; 32]> = None;
         let mut c_hs: Option<[u8; 32]> = None;
         let mut s_hs: Option<[u8; 32]> = None;
+        let mut cert_verified = false;
 
         loop {
             let (rtype, payload) = self.read_record()?;
@@ -437,8 +438,12 @@ impl TlsConn {
                         if sha256(&spki) != expected {
                             return Err(bad("TLS certificate pin mismatch"));
                         }
+                        cert_verified = true;
                     }
                     20 => {
+                        if !cert_verified {
+                            return Err(bad("server sent no verified certificate"));
+                        }
                         let shs = s_hs.ok_or_else(|| bad("invalid handshake order"))?;
                         let fk = tls_expand_label(&shs, "finished", &[], 32);
                         let mut k = [0u8; 32];
@@ -523,6 +528,9 @@ impl TlsConn {
     }
 
     fn decrypt_record(&mut self, payload: &[u8]) -> io::Result<(u8, Vec<u8>)> {
+        if self.read_seq == u64::MAX {
+            return Err(bad("TLS read sequence exhausted"));
+        }
         let n = nonce(&self.read_iv, self.read_seq);
         let aad = [CT_APP, 0x03, 0x03, (payload.len() >> 8) as u8, payload.len() as u8];
         let inner = match aead_open(&self.read_key, &n, &aad, payload) {
