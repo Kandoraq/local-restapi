@@ -4,23 +4,10 @@ use std::io::Read;
 
 pub fn random_bytes(n: usize) -> Vec<u8> {
     let mut v = vec![0u8; n];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        if f.read_exact(&mut v).is_ok() {
-            return v;
-        }
-    }
-
-    let mut x = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64)
-        .unwrap_or(0x9e3779b97f4a7c15)
-        ^ (std::process::id() as u64).rotate_left(32);
-    for b in v.iter_mut() {
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        *b = (x >> 24) as u8;
-    }
+    let mut f = std::fs::File::open("/dev/urandom")
+        .expect("secure randomness unavailable: /dev/urandom cannot be opened");
+    f.read_exact(&mut v)
+        .expect("secure randomness unavailable: /dev/urandom read failed");
     v
 }
 
