@@ -433,11 +433,10 @@ impl TlsConn {
                             .ok_or_else(|| bad("unreadable certificate"))?;
                         let spki = spki_from_der(&leaf)
                             .ok_or_else(|| bad("certificate has no public key info"))?;
-                        let expected = pin.ok_or_else(|| {
-                            bad("TLS certificate pin is required but not configured")
-                        })?;
-                        if sha256(&spki) != expected {
-                            return Err(bad("TLS certificate pin mismatch"));
+                        if let Some(expected) = pin {
+                            if sha256(&spki) != expected {
+                                return Err(bad("TLS certificate pin mismatch"));
+                            }
                         }
                         cert_verified = true;
                     }
