@@ -271,7 +271,7 @@ The other services bind to `0.0.0.0`.
 
 ## Design decisions
 
-**Four binaries, not one server.** Isolation is cheaper than a plugin system here, and a crash in one service leaves the others running.
+**One binary per component.** The four APIs and the dashboard run as separate processes. Isolation is cheaper than a plugin system here, and a crash in one service leaves the others running.
 
 **No third-party crates.** The image tools implement PNG decoding, deflate, and inflation locally. The network tools implement TLS, AES-GCM, SHA-256, and X25519 locally. Builds work without a crate cache.
 
