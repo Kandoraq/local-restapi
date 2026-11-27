@@ -253,7 +253,7 @@ The dashboard has no authentication. Use it only on a trusted local network. It 
 | `PORT` | all | see table above | Listening port |
 | `HOST` | `youtubeapi` | `127.0.0.1` | Bind address |
 | `YT_KEY` | `youtubeapi` | unset | Required `?key=` value when set |
-| `YOUTUBE_API_KEY` | `youtubeapi` | unset | YouTube Internal API key appended to player and search requests |
+| `YOUTUBE_API_KEY` | `youtubeapi` | unset | Optional key appended to player and search requests. The service works without it |
 | `TLS_PIN_SHA256` | `youtubeapi`, `tiktokapi` | unset | SHA-256 of a server SPKI, overrides built-in pin |
 | `TLS_ALLOW_UNPINNED` | `youtubeapi`, `tiktokapi` | unset | Set to `1` to allow unverified TLS for hosts without a built-in pin |
 | `YT_COOKIES` | `youtubeapi` | `cookies.txt` | Cookie file path |
@@ -261,6 +261,14 @@ The dashboard has no authentication. Use it only on a trusted local network. It 
 The other services bind to `0.0.0.0`.
 
 For local development, copy `.env.example` to `.env` and fill in only the values you need. The `.env` file is gitignored. The services read these values directly from the environment, so export them from `.env` with your shell or process manager before starting a service.
+
+### YouTube API key
+
+The repository contains no API key. `YOUTUBE_API_KEY` is optional, and player and search requests succeed without it for most videos.
+
+Early builds carried YouTube's own web client key as a constant. That value is printed in the public HTML of `youtube.com`, is not tied to any account, and gives no access to private data, billing, or account settings. It is a public identifier, not a secret, so it does not need rotation.
+
+A key you create yourself in Google Cloud is different. That one is a secret. Keep it in `.env` or your shell environment and never commit it.
 
 ## Security notes
 
