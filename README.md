@@ -253,6 +253,7 @@ The dashboard has no authentication. Use it only on a trusted local network. It 
 | `PORT` | all | see table above | Listening port |
 | `HOST` | `youtubeapi` | `127.0.0.1` | Bind address |
 | `YT_KEY` | `youtubeapi` | unset | Required `?key=` value when set |
+| `YOUTUBE_API_KEY` | `youtubeapi` | unset | YouTube Internal API key appended to player and search requests |
 | `TLS_PIN_SHA256` | `youtubeapi`, `tiktokapi` | unset | SHA-256 of a server SPKI, overrides built-in pin |
 | `TLS_ALLOW_UNPINNED` | `youtubeapi`, `tiktokapi` | unset | Set to `1` to allow unverified TLS for hosts without a built-in pin |
 | `YT_COOKIES` | `youtubeapi` | `cookies.txt` | Cookie file path |

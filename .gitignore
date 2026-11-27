@@ -9,6 +9,7 @@ shorturlapi/shorturls.json
 *.tmp
 
 # Credentials and secrets
+youtube-api-key.txt
 cookies.txt
 *.cookie
 *.cookies

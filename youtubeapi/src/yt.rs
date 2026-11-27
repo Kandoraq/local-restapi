@@ -3,8 +3,18 @@ use crate::json::{self, quote, Json};
 use std::sync::OnceLock;
 
 const PLAYER_URL: &str = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
-const PLAYER_URL_KEY: &str = "https://www.youtube.com/youtubei/v1/player?key=REDACTED_YOUTUBE_API_KEY&prettyPrint=false";
-const SEARCH_URL: &str = "https://www.youtube.com/youtubei/v1/search?key=REDACTED_YOUTUBE_API_KEY&prettyPrint=false";
+const SEARCH_ENDPOINT: &str = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false";
+
+fn api_key() -> Option<String> {
+    std::env::var("YOUTUBE_API_KEY").ok().filter(|v| !v.trim().is_empty())
+}
+
+fn keyed_url(base: &str) -> String {
+    match api_key() {
+        Some(k) => format!("{}&key={}", base, k),
+        None => base.to_string(),
+    }
+}
 const HOME_URL: &str = "https://www.youtube.com/";
 
 struct Profile {
@@ -481,11 +491,11 @@ fn player_body(p: &Profile, id: &str) -> String {
     s
 }
 
-fn player_url(p: &Profile) -> &'static str {
+fn player_url(p: &Profile) -> String {
     if p.keyed {
-        PLAYER_URL_KEY
+        keyed_url(PLAYER_URL)
     } else {
-        PLAYER_URL
+        PLAYER_URL.to_string()
     }
 }
 
@@ -739,7 +749,7 @@ fn extract_balanced_object(hay: &str, key: &str) -> Option<String> {
 fn try_player(p: &Profile, id: &str) -> Result<Video, String> {
     let body = player_body(p, id);
     let h = profile_headers(p);
-    let mut r = httpc::post_json(player_url(p), &body, &h, 60)?;
+    let mut r = httpc::post_json(&player_url(p), &body, &h, 60)?;
     absorb_cookies(&r.headers);
     if r.status != 200 {
         return Err(format!("http {}", r.status));
@@ -1053,7 +1063,8 @@ pub fn search(q: &str) -> Result<Vec<SearchItem>, String> {
         ("Referer".to_string(), "https://www.youtube.com/".to_string()),
         ("Cookie".to_string(), cookie_header().to_string()),
     ];
-    let mut r = httpc::post_json(SEARCH_URL, &body, &headers, 60)?;
+    let search_url = keyed_url(SEARCH_ENDPOINT);
+    let mut r = httpc::post_json(&search_url, &body, &headers, 60)?;
     absorb_cookies(&r.headers);
     if r.status != 200 {
         return Err(format!("search HTTP {}", r.status));
