@@ -10,6 +10,7 @@ assignees: ''
 
 Which service is affected?
 
+- [ ] dashboard
 - [ ] removewmapi
 - [ ] tiktokapi
 - [ ] removebgapi

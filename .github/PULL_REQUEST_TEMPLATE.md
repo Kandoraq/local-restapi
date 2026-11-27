@@ -8,6 +8,7 @@ Link the issue or explain the problem this solves.
 
 ## Service affected
 
+- [ ] dashboard
 - [ ] removewmapi
 - [ ] tiktokapi
 - [ ] removebgapi

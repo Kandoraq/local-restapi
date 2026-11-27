@@ -10,6 +10,7 @@ assignees: ''
 
 Which service should change?
 
+- [ ] dashboard
 - [ ] removewmapi
 - [ ] tiktokapi
 - [ ] removebgapi
