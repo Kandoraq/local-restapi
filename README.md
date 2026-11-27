@@ -260,6 +260,8 @@ The dashboard has no authentication. Use it only on a trusted local network. It 
 
 The other services bind to `0.0.0.0`.
 
+For local development, copy `.env.example` to `.env` and fill in only the values you need. The `.env` file is gitignored. The services read these values directly from the environment, so export them from `.env` with your shell or process manager before starting a service.
+
 ## Security notes
 
 - All responses set `Access-Control-Allow-Origin: *`. Do not expose these services to untrusted networks without a reverse proxy that enforces your own policy.
