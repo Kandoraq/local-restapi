@@ -1,4 +1,3 @@
-use crate::httpc;
 use crate::json::{self, quote, Json};
 use std::sync::OnceLock;
 
@@ -59,7 +58,7 @@ const PROFILES: &[Profile] = &[
         name: "WEB",
         ver: "2.20261123.08.00",
         num: "1",
-        ua: httpc::USER_AGENT,
+        ua: maqitai::httpc::USER_AGENT,
         extra: "",
         referer: "https://www.youtube.com/",
         keyed: true,
@@ -86,7 +85,7 @@ const PROFILES: &[Profile] = &[
         name: "WEB_EMBEDDED_PLAYER",
         ver: "1.20261123.01.00",
         num: "56",
-        ua: httpc::USER_AGENT,
+        ua: maqitai::httpc::USER_AGENT,
         extra: "\"clientScreen\":\"EMBED\",\"thirdParty\":{\"embedUrl\":\"https://www.youtube.com/\"}",
         referer: "https://www.youtube.com/",
         keyed: false,
@@ -426,11 +425,11 @@ fn visitor_data() -> Option<String> {
         }
     }
     let headers = vec![
-        ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
+        ("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string()),
         ("Accept-Language".to_string(), "en-US,en;q=0.9".to_string()),
         ("Cookie".to_string(), cookie_header()),
     ];
-    let mut r = httpc::get(HOME_URL, &headers, 30).ok()?;
+    let mut r = maqitai::httpc::get(HOME_URL, &headers, 30).ok()?;
     absorb_cookies(&r.headers);
     let body = r.read_body_bytes().ok()?;
     let txt = String::from_utf8_lossy(&body);
@@ -699,11 +698,11 @@ fn html_player(id: &str) -> Option<Json> {
         id
     );
     let headers = vec![
-        ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
+        ("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string()),
         ("Accept-Language".to_string(), "en-US,en;q=0.9".to_string()),
         ("Cookie".to_string(), cookie_header().to_string()),
     ];
-    let mut r = httpc::get(&url, &headers, 30).ok()?;
+    let mut r = maqitai::httpc::get(&url, &headers, 30).ok()?;
     absorb_cookies(&r.headers);
     let body = r.read_body_bytes().ok()?;
     let txt = String::from_utf8_lossy(&body);
@@ -749,7 +748,7 @@ fn extract_balanced_object(hay: &str, key: &str) -> Option<String> {
 fn try_player(p: &Profile, id: &str) -> Result<Video, String> {
     let body = player_body(p, id);
     let h = profile_headers(p);
-    let mut r = httpc::post_json(&player_url(p), &body, &h, 60)?;
+    let mut r = maqitai::httpc::post_json(&player_url(p), &body, &h, 60)?;
     absorb_cookies(&r.headers);
     if r.status != 200 {
         return Err(format!("http {}", r.status));
@@ -1057,14 +1056,14 @@ pub fn search(q: &str) -> Result<Vec<SearchItem>, String> {
     body.push('}');
     let headers = vec![
         ("Content-Type".to_string(), "application/json".to_string()),
-        ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
+        ("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string()),
         ("Accept-Language".to_string(), "en-US,en;q=0.9".to_string()),
         ("Origin".to_string(), "https://www.youtube.com".to_string()),
         ("Referer".to_string(), "https://www.youtube.com/".to_string()),
         ("Cookie".to_string(), cookie_header().to_string()),
     ];
     let search_url = keyed_url(SEARCH_ENDPOINT);
-    let mut r = httpc::post_json(&search_url, &body, &headers, 60)?;
+    let mut r = maqitai::httpc::post_json(&search_url, &body, &headers, 60)?;
     absorb_cookies(&r.headers);
     if r.status != 200 {
         return Err(format!("search HTTP {}", r.status));

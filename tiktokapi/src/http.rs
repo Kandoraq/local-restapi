@@ -1,4 +1,3 @@
-use crate::httpc;
 use std::collections::BTreeMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -105,16 +104,16 @@ fn absorb(headers: &[(String, String)]) {
     }
 }
 
-fn request(url: &str, extra: &[(String, String)], timeout: u64) -> Result<httpc::Response, String> {
+fn request(url: &str, extra: &[(String, String)], timeout: u64) -> Result<maqitai::httpc::Response, String> {
     let mut headers = vec![
-        ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
+        ("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string()),
         ("Accept".to_string(), "application/json, text/html;q=0.9, */*;q=0.8".to_string()),
         ("Cookie".to_string(), cookie_header()),
     ];
     for (k, v) in extra {
         headers.push((k.clone(), v.clone()));
     }
-    let r = httpc::get(url, &headers, timeout)?;
+    let r = maqitai::httpc::get(url, &headers, timeout)?;
     absorb(&r.headers);
     Ok(r)
 }
@@ -128,10 +127,10 @@ pub fn get_text(url: &str, max_size: &str, timeout: &str) -> Result<String, Stri
     let raw = r.read_to_end(number(max_size, 10 * 1024 * 1024) as usize)?;
     let enc = r.header("content-encoding").unwrap_or("").to_ascii_lowercase();
     let bytes = if enc.contains("gzip") {
-        crate::crypto::inflate_gzip(&raw).map_err(|e| format!("gzip: {}", e))?
+        maqitai::crypto::inflate_gzip(&raw).map_err(|e| format!("gzip: {}", e))?
     } else if enc.contains("deflate") {
-        crate::crypto::inflate_zlib(&raw)
-            .or_else(|_| crate::crypto::inflate_deflate(&raw))
+        maqitai::crypto::inflate_zlib(&raw)
+            .or_else(|_| maqitai::crypto::inflate_deflate(&raw))
             .map_err(|e| format!("deflate: {}", e))?
     } else {
         raw

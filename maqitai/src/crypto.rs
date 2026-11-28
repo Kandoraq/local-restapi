@@ -1134,3 +1134,195 @@ pub fn inflate_gzip(data: &[u8]) -> Result<Vec<u8>, String> {
     inflate_deflate(compressed)
 }
 
+
+// ---------- BigUint (minimal, base 2^32) ----------
+
+#[derive(Clone)]
+pub struct BigUint { pub limbs: Vec<u32> }
+
+impl PartialEq for BigUint {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+impl Eq for BigUint {}
+
+impl PartialOrd for BigUint {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for BigUint {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        if self.limbs.len() != other.limbs.len() {
+            return self.limbs.len().cmp(&other.limbs.len());
+        }
+        for (a, b) in self.limbs.iter().zip(other.limbs.iter()) {
+            if a != b { return a.cmp(b); }
+        }
+        std::cmp::Ordering::Equal
+    }
+}
+
+
+impl BigUint {
+    pub fn from_bytes_be(bytes: &[u8]) -> Self {
+        let mut limbs = Vec::new();
+        let pad = (4 - (bytes.len() % 4)) % 4;
+        let mut buf = vec![0u8; pad];
+        buf.extend_from_slice(bytes);
+        let mut i = 0;
+        while i + 4 <= buf.len() {
+            let v = u32::from_be_bytes([buf[i], buf[i+1], buf[i+2], buf[i+3]]);
+            limbs.push(v);
+            i += 4;
+        }
+        while limbs.len() > 1 && limbs[0] == 0 { limbs.remove(0); }
+        if limbs.is_empty() { limbs.push(0); }
+        BigUint { limbs }
+    }
+    pub fn to_bytes_be(&self) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut first = true;
+        for &l in &self.limbs {
+            let b = l.to_be_bytes();
+            if first {
+                let mut started = false;
+                for &x in &b {
+                    if !started && x == 0 { continue; }
+                    started = true;
+                    out.push(x);
+                }
+                first = false;
+            } else {
+                out.extend_from_slice(&b);
+            }
+        }
+        if out.is_empty() { out.push(0); }
+        out
+    }
+    pub fn is_zero(&self) -> bool { self.limbs.len() == 1 && self.limbs[0] == 0 }
+
+    pub fn add(&self, other: &Self) -> Self {
+        let n = self.limbs.len().max(other.limbs.len());
+        let mut res = vec![0u32; n + 1];
+        let mut carry: u64 = 0;
+        for i in 0..n {
+            let a = if i < self.limbs.len() { self.limbs[self.limbs.len()-1-i] as u64 } else { 0 };
+            let b = if i < other.limbs.len() { other.limbs[other.limbs.len()-1-i] as u64 } else { 0 };
+            let s = a + b + carry;
+            res[n - i] = s as u32;
+            carry = s >> 32;
+        }
+        res[0] = carry as u32;
+        while res.len() > 1 && res[0] == 0 { res.remove(0); }
+        BigUint { limbs: res }
+    }
+    pub fn sub(&self, other: &Self) -> Self {
+        let n = self.limbs.len();
+        let mut res = vec![0u32; n];
+        let mut borrow: i64 = 0;
+        for i in 0..n {
+            let a = self.limbs[n-1-i] as i64;
+            let b = if i < other.limbs.len() { other.limbs[other.limbs.len()-1-i] as i64 } else { 0 };
+            let mut d = a - b - borrow;
+            if d < 0 { d += 1i64 << 32; borrow = 1; } else { borrow = 0; }
+            res[n-1-i] = d as u32;
+        }
+        while res.len() > 1 && res[0] == 0 { res.remove(0); }
+        BigUint { limbs: res }
+    }
+    pub fn mul(&self, other: &Self) -> Self {
+        let (a, b) = (&self.limbs, &other.limbs);
+        let la = a.len(); let lb = b.len();
+        let mut res = vec![0u64; la + lb];
+        for i in 0..la {
+            let mut carry: u64 = 0;
+            for j in 0..lb {
+                let prod = res[i + j] + (a[la-1-i] as u64) * (b[lb-1-j] as u64) + carry;
+                res[i + j] = prod & 0xFFFFFFFF;
+                carry = prod >> 32;
+            }
+            res[i + lb] += carry;
+        }
+        let mut limbs = Vec::with_capacity(res.len());
+        for &v in res.iter().rev() { limbs.push(v as u32); }
+        while limbs.len() > 1 && limbs[0] == 0 { limbs.remove(0); }
+        BigUint { limbs }
+    }
+    pub fn divmod(&self, divisor: &Self) -> (Self, Self) {
+        if divisor.is_zero() { panic!("div by zero"); }
+        if self.cmp(divisor) == std::cmp::Ordering::Less {
+            return (BigUint { limbs: vec![0] }, self.clone());
+        }
+        let mut q = BigUint { limbs: vec![0] };
+        let mut r = BigUint { limbs: vec![0] };
+        let mut bits: Vec<u8> = Vec::new();
+        for &l in &self.limbs {
+            for i in (0..32).rev() {
+                bits.push(((l >> i) & 1) as u8);
+            }
+        }
+        let mut started = false;
+        for &bit in &bits {
+            if !started {
+                if bit == 0 { continue; }
+                started = true;
+            }
+            r = r.shl1();
+            if bit == 1 { r = r.add(&BigUint { limbs: vec![1] }); }
+            if r.cmp(divisor) != std::cmp::Ordering::Less {
+                r = r.sub(divisor);
+                q = q.shl1();
+                q = q.add(&BigUint { limbs: vec![1] });
+            } else {
+                q = q.shl1();
+            }
+        }
+        if !started { return (BigUint { limbs: vec![0] }, BigUint { limbs: vec![0] }); }
+        while q.limbs.len() > 1 && q.limbs[0] == 0 { q.limbs.remove(0); }
+        while r.limbs.len() > 1 && r.limbs[0] == 0 { r.limbs.remove(0); }
+        (q, r)
+    }
+    fn shl1(&self) -> Self {
+        let mut res = self.limbs.clone();
+        let mut carry: u32 = 0;
+        for i in (0..res.len()).rev() {
+            let new_carry = res[i] >> 31;
+            res[i] = (res[i] << 1) | carry;
+            carry = new_carry;
+        }
+        if carry != 0 { res.insert(0, carry); }
+        BigUint { limbs: res }
+    }
+    pub fn modpow(&self, exp: &Self, modulus: &Self) -> Self {
+        let mut result = BigUint { limbs: vec![1] };
+        let mut base = self.clone();
+        let (_, r) = base.divmod(modulus);
+        base = r;
+        let mut bits: Vec<u8> = Vec::new();
+        for &l in &exp.limbs {
+            for i in (0..32).rev() {
+                bits.push(((l >> i) & 1) as u8);
+            }
+        }
+        let mut started = false;
+        for &bit in &bits {
+            if !started {
+                if bit == 0 { continue; }
+                started = true;
+                result = base.clone();
+                continue;
+            }
+            let sq = result.mul(&result);
+            let (_, r) = sq.divmod(modulus);
+            result = r;
+            if bit == 1 {
+                let m = result.mul(&base);
+                let (_, r) = m.divmod(modulus);
+                result = r;
+            }
+        }
+        if !started { BigUint { limbs: vec![1] } } else { result }
+    }
+}

@@ -1,4 +1,4 @@
-use crate::tls::TlsConn;
+use crate::tls::{TlsConn, Verify};
 use std::io;
 use std::time::Duration;
 
@@ -116,6 +116,7 @@ enum Mode {
 pub struct Response {
     pub status: u16,
     pub headers: Vec<(String, String)>,
+    pub final_url: String,
     conn: TlsConn,
     mode: Mode,
     remaining: u64,
@@ -130,6 +131,16 @@ fn ioerr(e: io::Error) -> String {
 impl Response {
     pub fn header(&self, name: &str) -> Option<&str> {
         header_value(&self.headers, name)
+    }
+
+    pub fn content_type(&self) -> String {
+        self.header("content-type")
+            .unwrap_or("application/octet-stream")
+            .to_string()
+    }
+
+    pub fn content_length(&self) -> Option<u64> {
+        self.header("content-length").and_then(|v| v.trim().parse().ok())
     }
 
     pub fn read_body(&mut self, out: &mut [u8]) -> HttpResult<usize> {
@@ -211,9 +222,59 @@ impl Response {
         }
         Ok(out)
     }
+
+    pub fn read_body_bytes(&mut self) -> HttpResult<Vec<u8>> {
+        let raw = self.read_to_end(256 * 1024 * 1024)?;
+        let enc = self.header("content-encoding").unwrap_or("").to_ascii_lowercase();
+        if enc.contains("gzip") {
+            crate::inflate::inflate_gzip(&raw).map_err(|e| format!("gzip: {}", e))
+        } else if enc.contains("deflate") {
+            crate::inflate::inflate_zlib(&raw)
+                .or_else(|_| crate::inflate::inflate_deflate(&raw))
+                .map_err(|e| format!("deflate: {}", e))
+        } else {
+            Ok(raw)
+        }
+    }
+
+    pub fn set_timeout(&self, secs: u64) {
+        self.conn.set_timeout(secs);
+    }
 }
 
-fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
+pub const ROOT_PEM: &str = r#"
+-----BEGIN CERTIFICATE-----
+MIIFCzCCAvOgAwIBAgIQf/AFoHxM3tEArZ1mpRB7mDANBgkqhkiG9w0BAQsFADBH
+MQswCQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExM
+QzEUMBIGA1UEAxMLR1RTIFJvb3QgUjEwHhcNMjMxMjEzMDkwMDAwWhcNMjkwMjIw
+MTQwMDAwWjA7MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVR29vZ2xlIFRydXN0IFNl
+cnZpY2VzMQwwCgYDVQQDEwNXUjIwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK
+AoIBAQCp/5x/RR5wqFOfytnlDd5GV1d9vI+aWqxG8YSau5HbyfsvAfuSCQAWXqAc
++MGr+XgvSszYhaLYWTwO0xj7sfUkDSbutltkdnwUxy96zqhMt/TZCPzfhyM1IKji
+aeKMTj+xWfpgoh6zySBTGYLKNlNtYE3pAJH8do1cCA8Kwtzxc2vFE24KT3rC8gIc
+LrRjg9ox9i11MLL7q8Ju26nADrn5Z9TDJVd06wW06Y613ijNzHoU5HEDy01hLmFX
+xRmpC5iEGuh5KdmyjS//V2pm4M6rlagplmNwEmceOuHbsCFx13ye/aoXbv4r+zgX
+FNFmp6+atXDMyGOBOozAKql2N87jAgMBAAGjgf4wgfswDgYDVR0PAQH/BAQDAgGG
+MB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjASBgNVHRMBAf8ECDAGAQH/
+AgEAMB0GA1UdDgQWBBTeGx7teRXUPjckwyG77DQ5bUKyMDAfBgNVHSMEGDAWgBTk
+rysmcRorSCeFL1JmLO/wiRNxPjA0BggrBgEFBQcBAQQoMCYwJAYIKwYBBQUHMAKG
+GGh0dHA6Ly9pLnBraS5nb29nL3IxLmNydDArBgNVHR8EJDAiMCCgHqAchhpodHRw
+Oi8vYy5wa2kuZ29vZy9yL3IxLmNybDATBgNVHSAEDDAKMAgGBmeBDAECATANBgkq
+hkiG9w0BAQsFAAOCAgEARXWL5R87RBOWGqtY8TXJbz3S0DNKhjO6V1FP7sQ02hYS
+TL8Tnw3UVOlIecAwPJQl8hr0ujKUtjNyC4XuCRElNJThb0Lbgpt7fyqaqf9/qdLe
+SiDLs/sDA7j4BwXaWZIvGEaYzq9yviQmsR4ATb0IrZNBRAq7x9UBhb+TV+PfdBJT
+DhEl05vc3ssnbrPCuTNiOcLgNeFbpwkuGcuRKnZc8d/KI4RApW//mkHgte8y0YWu
+ryUJ8GLFbsLIbjL9uNrizkqRSvOFVU6xddZIMy9vhNkSXJ/UcZhjJY1pXAprffJB
+vei7j+Qi151lRehMCofa6WBmiA4fx+FOVsV2/7R6V2nyAiIJJkEd2nSi5SnzxJrl
+Xdaqev3htytmOPvoKWa676ATL/hzfvDaQBEcXd2Ppvy+275W+DKcH0FBbX62xevG
+iza3F4ydzxl6NJ8hk8R+dDXSqv1MbRT1ybB5W0k8878XSOjvmiYTDIfyc9acxVJr
+Y/cykHipa+te1pOhv7wYPYtZ9orGBV5SGOJm4NrB3K1aJar0RfzxC3ikr7Dyc6Qw
+qDTBU39CluVIQeuQRgwG3MuSxl7zRERDRilGoKb8uY45JzmxWuKxrfwT/478JuHU
+/oTxUFqOl2stKnn7QGTq8z29W+GgBLCXSBxC9epaHM0myFH/FJlniXJfHeytWt0=
+-----END CERTIFICATE-----
+"#;
+
+fn default_pin(host: &str) -> Result<Verify, String> {
     if let Ok(v) = std::env::var("TLS_PIN_SHA256") {
         let bytes = crate::crypto::hex_decode(&v)
             .ok_or_else(|| "TLS_PIN_SHA256 is not valid hex".to_string())?;
@@ -222,7 +283,7 @@ fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
         }
         let mut a = [0u8; 32];
         a.copy_from_slice(&bytes);
-        return Ok(Some(a));
+        return Ok(Verify::Pin(a));
     }
     let google = "9757a339075f3299e0bb4083a9a0f39bfbeaba31f4b4418031423367d9f2e0b3";
     let tikwm = "555dd530c18a2ef14d9249cd6968947d25841ba69400c7e57070765e4443a745";
@@ -242,13 +303,13 @@ fn default_pin(host: &str) -> Result<Option<[u8; 32]>, String> {
         let bytes = crate::crypto::hex_decode(builtin).ok_or_else(|| "bad builtin pin".to_string())?;
         let mut a = [0u8; 32];
         a.copy_from_slice(&bytes);
-        return Ok(Some(a));
+        return Ok(Verify::Pin(a));
     }
     if host.ends_with(".googlevideo.com") || host == "googlevideo.com" {
-        return Ok(None);
+        return Ok(Verify::CaPem(ROOT_PEM));
     }
     if std::env::var("TLS_ALLOW_UNPINNED").map(|v| v == "1").unwrap_or(false) {
-        return Ok(None);
+        return Ok(Verify::None);
     }
     Err(format!(
         "no TLS pin for {}. Set TLS_PIN_SHA256 to the SHA-256 of the server SPKI, or TLS_ALLOW_UNPINNED=1 to allow unverified TLS",
@@ -262,13 +323,13 @@ fn send_once(
     headers: &[(String, String)],
     body: Option<&[u8]>,
     timeout: u64,
-    pin: Option<[u8; 32]>,
+    verify: Option<Verify>,
 ) -> HttpResult<Response> {
-    let pin = match pin {
-        Some(p) => Some(p),
+    let verify = match verify {
+        Some(v) => v,
         None => default_pin(&url.host)?,
     };
-    let mut conn = TlsConn::connect(&url.host, url.port, pin, timeout).map_err(ioerr)?;
+    let mut conn = TlsConn::connect(&url.host, url.port, verify, timeout).map_err(ioerr)?;
 
     let mut req = String::new();
     req.push_str(method);
@@ -369,6 +430,7 @@ fn send_once(
     Ok(Response {
         status,
         headers: hdrs,
+        final_url: format!("{}://{}{}", url.scheme, default_host, url.path),
         conn,
         mode,
         remaining,
@@ -393,17 +455,17 @@ pub fn fetch(
     headers: &[(String, String)],
     body: Option<&[u8]>,
     timeout: u64,
-    pin: Option<[u8; 32]>,
+    verify: Option<Verify>,
 ) -> HttpResult<Response> {
     let mut current = Url::parse(url)?;
     let mut method = method.to_string();
     let mut body = body.map(|b| b.to_vec());
     for _ in 0..6 {
-        let resp = match send_once(&current, &method, headers, body.as_deref(), timeout, pin) {
+        let resp = match send_once(&current, &method, headers, body.as_deref(), timeout, verify) {
             Ok(r) => r,
             Err(_) => {
                 std::thread::sleep(Duration::from_millis(120));
-                send_once(&current, &method, headers, body.as_deref(), timeout, pin)?
+                send_once(&current, &method, headers, body.as_deref(), timeout, verify)?
             }
         };
         if resp.status >= 300 && resp.status < 400 {
@@ -427,3 +489,8 @@ pub fn get(url: &str, headers: &[(String, String)], timeout: u64) -> HttpResult<
     fetch(url, "GET", headers, None, timeout, None)
 }
 
+pub fn post_json(url: &str, json: &str, headers: &[(String, String)], timeout: u64) -> HttpResult<Response> {
+    let mut h = vec![("Content-Type".to_string(), "application/json".to_string())];
+    h.extend_from_slice(headers);
+    fetch(url, "POST", &h, Some(json.as_bytes()), timeout, None)
+}
