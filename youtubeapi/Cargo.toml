@@ -9,6 +9,7 @@ name = "youtubeapi"
 path = "src/main.rs"
 
 [dependencies]
+maqitai = { path = "../maqitai" }
 
 [profile.release]
 opt-level = 3

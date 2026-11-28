@@ -3,5 +3,12 @@
 version = 4
 
 [[package]]
+name = "maqitai"
+version = "0.1.0"
+
+[[package]]
 name = "youtubeapi"
 version = "0.1.0"
+dependencies = [
+ "maqitai",
+]

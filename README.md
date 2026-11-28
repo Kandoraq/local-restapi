@@ -25,6 +25,7 @@ A collection of small REST services written in Rust. Every service is its own bi
 - [Configuration](#configuration)
 - [Security notes](#security-notes)
 - [Design decisions](#design-decisions)
+- [Developer tools](#developer-tools)
 - [Security policy](SECURITY.md)
 - [Developer](https://github.com/Kandoraq)
 - [License](#license)
@@ -77,13 +78,13 @@ curl 'http://127.0.0.1:8085/api/info?v=dQw4w9WgXcQ'
 
 Each service owns one port and one process. A change to one service cannot take down another. A long video download in `youtubeapi` does not block image processing in `removebgapi`.
 
-The cost is duplicated HTTP plumbing: every service parses its own request line and headers. This is deliberate. A shared web framework would introduce a dependency, and these services stay on the Rust standard library only.
+The network services share a local library named `maqitai`. It holds the TLS client, the HTTP client, and the crypto primitives. `tiktokapi` and `youtubeapi` depend on it by path. No crate comes from a registry, and the image services stay independent of it.
 
 Networking differs by service:
 
 - `removewmapi` and `removebgapi` only read the request body. They never make outbound requests.
-- `tiktokapi` and `youtubeapi` make outbound HTTPS requests with a local TLS 1.3 implementation. Both keep a cookie jar that absorbs `Set-Cookie` and drops expired entries before the next request.
-- `youtubeapi` also implements AES-GCM, SHA-256, and X25519 locally. Outbound TLS uses mandatory SPKI pinning. See [Security notes](#security-notes).
+- `tiktokapi` and `youtubeapi` make outbound HTTPS requests through `maqitai`. That client implements TLS 1.3, AES-GCM, SHA-256, X25519, and gzip or deflate decoding, with no third-party crates. It keeps a cookie jar that absorbs `Set-Cookie` and drops expired entries before the next request.
+- Outbound TLS uses mandatory SPKI pinning, with one CA signature check for googlevideo hosts. See [Security notes](#security-notes).
 
 Request bodies are read in 64 KiB chunks. The declared `Content-Length` is capped, and memory grows only as bytes arrive, so a caller cannot force a large allocation with a single header.
 
@@ -273,7 +274,7 @@ A key you create yourself in Google Cloud is different. That one is a secret. Ke
 ## Security notes
 
 - All responses set `Access-Control-Allow-Origin: *`. Do not expose these services to untrusted networks without a reverse proxy that enforces your own policy.
-- `tiktokapi` and `youtubeapi` pin the leaf certificate on every outbound TLS connection. Built-in pins cover `tikwm.com`, `youtube.com`, and `ytimg.com`. Googlevideo hosts use unverified TLS because their certificates rotate too often for a fixed pin; set `TLS_PIN_SHA256` if you want to pin one yourself. Other hosts are rejected unless you set `TLS_PIN_SHA256` or `TLS_ALLOW_UNPINNED=1`. Pins are compared against the SubjectPublicKeyInfo from the leaf certificate, so a leaf renewal with the same key keeps working. Full X.509 chain validation is not implemented; this is key continuity, not PKI verification. Setting `TLS_ALLOW_UNPINNED=1` disables pinning for hosts without a built-in pin.
+- `tiktokapi` and `youtubeapi` verify outbound TLS. Built-in SPKI pins cover `tikwm.com`, `youtube.com`, and `ytimg.com`. Googlevideo hosts are verified against the embedded WR2 intermediate certificate (RSA, PKCS#1 v1.5, SHA-256) with a two-level chain check, because their leaf certificates rotate across hosts. Other hosts are rejected unless you set `TLS_PIN_SHA256` or `TLS_ALLOW_UNPINNED=1`. Full X.509 chain validation and hostname verification are not implemented; this is key continuity plus a single-level signature check, not full PKI. Setting `TLS_ALLOW_UNPINNED=1` disables verification for hosts without a built-in rule.
 - `TLS_ALLOW_UNPINNED=1` removes server authentication for hosts without a built-in pin. Use it only on a network you control, and prefer a real pin when possible.
 - `YT_KEY` is a shared string. It is not a substitute for per-user authentication.
 - Cookie files and credentials are gitignored. See [.gitignore](.gitignore).
@@ -284,7 +285,7 @@ A key you create yourself in Google Cloud is different. That one is a secret. Ke
 
 **One binary per component.** The four APIs and the dashboard run as separate processes. Isolation is cheaper than a plugin system here, and a crash in one service leaves the others running.
 
-**No third-party crates.** The image tools implement PNG decoding, deflate, and inflation locally. The network tools implement TLS, AES-GCM, SHA-256, and X25519 locally. Builds work without a crate cache.
+**No third-party crates.** The image tools implement PNG decoding, deflate, and inflation locally. The network tools share `maqitai`, which implements TLS, AES-GCM, SHA-256, X25519, and compression locally. Builds work without a crate cache.
 
 **Original files and metadata.** Both APIs return the bytes, content type, and filename from the upstream source. `tiktokapi` reads the CDN `Content-Type` and `Content-Disposition`, falling back to the last segment of the CDN URL. `youtubeapi` forwards the upstream `Content-Disposition`, falling back to the last segment of the googlevideo URL. Neither API invents a filename or rewrites the media container.
 
@@ -294,6 +295,18 @@ A key you create yourself in Google Cloud is different. That one is a secret. Ke
 
 **Incremental body reads.** An earlier version allocated the full declared `Content-Length`. A caller could claim 25 MiB and send one byte. Every service now grows its buffer as bytes arrive.
 
+## Developer tools
+
+`.kill.py` stops the local servers by binary name. It reads `/proc/<pid>/exe`, so it only matches processes whose executable belongs to this project.
+
+```sh
+python3 .kill.py              # list running project servers
+python3 .kill.py youtubeapi   # stop one server
+python3 .kill.py all          # stop every project server
+```
+
+It sends `SIGTERM` first. Names accepted: `dashboard`, `removewmapi`, `tiktokapi`, `removebgapi`, `youtubeapi`, and `all`.
+
 ## Tests
 
 Run the tests for one crate from the repository root:
@@ -302,7 +315,7 @@ Run the tests for one crate from the repository root:
 cargo test --manifest-path tiktokapi/Cargo.toml
 ```
 
-To check every crate, run the same command over the five manifests. `cargo clippy -- -D warnings` is clean in all five as well. The image services have no unit tests; their PNG decoder is exercised through real requests. `youtubeapi` has the largest test set, including ChaCha20-Poly1305 and X25519 known-answer vectors.
+To check every crate, run the same command over the six manifests (including `maqitai`). `cargo clippy -- -D warnings` is clean in all six as well. The image services have no unit tests; their PNG decoder is exercised through real requests. `maqitai` holds the shared crypto, TLS, and HTTP code and its tests, including ChaCha20-Poly1305 and X25519 known-answer vectors.
 
 ## License
 

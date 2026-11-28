@@ -1,4 +1,3 @@
-use crate::httpc;
 use crate::json::quote;
 use crate::yt::{self, Video};
 use std::collections::HashMap;
@@ -324,7 +323,7 @@ fn require_key(req: &Req) -> bool {
 }
 
 fn allowed_target(url: &str) -> bool {
-    match httpc::Url::parse(url) {
+    match maqitai::httpc::Url::parse(url) {
         Ok(u) => {
             if u.scheme != "https" {
                 return false;
@@ -392,16 +391,16 @@ fn parse_content_range(v: &str) -> Option<(u64, u64, Option<u64>)> {
     Some((start, end, total))
 }
 
-fn open_upstream(target: &str, range: Option<&str>) -> Result<httpc::Response, String> {
+fn open_upstream(target: &str, range: Option<&str>) -> Result<maqitai::httpc::Response, String> {
     let mut headers = vec![
-        ("User-Agent".to_string(), httpc::USER_AGENT.to_string()),
+        ("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string()),
         ("Accept-Encoding".to_string(), "identity".to_string()),
         ("Referer".to_string(), "https://www.youtube.com/".to_string()),
     ];
     if let Some(r) = range {
         headers.push(("Range".to_string(), r.to_string()));
     }
-    httpc::fetch(target, "GET", &headers, None, UPSTREAM_TIMEOUT_SECS, None)
+    maqitai::httpc::fetch(target, "GET", &headers, None, UPSTREAM_TIMEOUT_SECS, None)
 }
 
 fn parse_client_range(v: &str, total: u64) -> Option<(u64, u64)> {

@@ -219,26 +219,33 @@ fn spki_from_der(cert: &[u8]) -> Option<Vec<u8>> {
     None
 }
 
-fn leaf_cert_from_cert_msg(body: &[u8]) -> Option<Vec<u8>> {
-    if body.is_empty() {
-        return None;
-    }
+fn all_certs_from_cert_msg(body: &[u8]) -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    if body.is_empty() { return out; }
     let ctx = body[0] as usize;
     let mut p = 1 + ctx;
-    if body.len() < p + 3 {
-        return None;
-    }
+    if body.len() < p + 3 { return out; }
     let listlen = u24(&body[p..p + 3]);
     p += 3;
-    if body.len() < p + 3 {
-        return None;
+    let end = p + listlen;
+    if body.len() < end { return out; }
+    while p + 3 <= end {
+        let clen = u24(&body[p..p + 3]);
+        p += 3;
+        if clen == 0 || body.len() < p + clen { break; }
+        out.push(body[p..p + clen].to_vec());
+        p += clen;
+        // skip extensions (2 bytes length + data)
+        if p + 2 <= end {
+            let extlen = u16(&body[p..p + 2]) as usize;
+            p += 2 + extlen;
+        }
     }
-    let clen = u24(&body[p..p + 3]);
-    p += 3;
-    if listlen == 0 || clen == 0 || body.len() < p + clen {
-        return None;
-    }
-    Some(body[p..p + clen].to_vec())
+    out
+}
+
+fn u16(b: &[u8]) -> u16 {
+    u16::from_be_bytes([b[0], b[1]])
 }
 
 fn alert_text(payload: &[u8]) -> String {
@@ -249,9 +256,9 @@ fn alert_text(payload: &[u8]) -> String {
     }
 }
 
+type DnsEntry = (Instant, Vec<SocketAddr>);
 fn resolve(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
-    type Cache = HashMap<String, (Instant, Vec<SocketAddr>)>;
-    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    static CACHE: OnceLock<Mutex<HashMap<String, DnsEntry>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let key = format!("{}:{}", host, port);
     if let Ok(m) = cache.lock() {
@@ -286,8 +293,15 @@ fn resolve(host: &str, port: u16) -> io::Result<Vec<SocketAddr>> {
     ))
 }
 
+#[derive(Clone, Copy)]
+pub enum Verify {
+    Pin([u8; 32]),
+    CaPem(&'static str),
+    None,
+}
+
 impl TlsConn {
-    pub fn connect(host: &str, port: u16, pin: Option<[u8; 32]>, timeout: u64) -> io::Result<TlsConn> {
+    pub fn connect(host: &str, port: u16, verify: Verify, timeout: u64) -> io::Result<TlsConn> {
         let mut tcp = None;
         let mut last = None;
         for _round in 0..2 {
@@ -333,10 +347,14 @@ impl TlsConn {
             ptr: 0,
             closed: false,
         };
-        c.handshake(host, pin)?;
+        c.handshake(host, verify)?;
         Ok(c)
     }
 
+    pub fn set_timeout(&self, secs: u64) {
+        self.tcp.set_read_timeout(Some(Duration::from_secs(secs))).ok();
+        self.tcp.set_write_timeout(Some(Duration::from_secs(secs))).ok();
+    }
 
     fn set_read_secret(&mut self, secret: &[u8; 32]) {
         let k = tls_expand_label(secret, "key", &[], 32);
@@ -354,7 +372,7 @@ impl TlsConn {
         self.write_seq = 0;
     }
 
-    fn handshake(&mut self, host: &str, pin: Option<[u8; 32]>) -> io::Result<()> {
+    fn handshake(&mut self, host: &str, verify: Verify) -> io::Result<()> {
         let random = random_array::<32>();
         let sid = random_array::<32>();
         let priv_key = random_array::<32>();
@@ -429,14 +447,47 @@ impl TlsConn {
                     }
                     11 => {
                         transcript.extend_from_slice(&msg);
-                        let leaf = leaf_cert_from_cert_msg(body)
-                            .ok_or_else(|| bad("unreadable certificate"))?;
-                        let spki = spki_from_der(&leaf)
+                        let certs = all_certs_from_cert_msg(body);
+                        if certs.is_empty() {
+                            return Err(bad("unreadable certificate"));
+                        }
+                        let leaf = &certs[0];
+                        let spki = spki_from_der(leaf)
                             .ok_or_else(|| bad("certificate has no public key info"))?;
-                        if let Some(expected) = pin {
-                            if sha256(&spki) != expected {
-                                return Err(bad("TLS certificate pin mismatch"));
+                        match verify {
+                            Verify::Pin(expected) => {
+                                if sha256(&spki) != expected {
+                                    return Err(bad("TLS certificate pin mismatch"));
+                                }
                             }
+                            Verify::CaPem(pem) => {
+                                let root_der = match crate::cert::pem_decode(pem) { Some(d) => d, None => return Err(bad("bad CA pem")) };
+                                let mut current = certs[0].clone();
+                                let mut trusted = false;
+                                for _ in 0..4 {
+                                    let cur = match crate::cert::parse_cert_minimal(&current) { Some(c) => c, None => break };
+                                    let mut found = false;
+                                    let mut candidates: Vec<Vec<u8>> = certs[1..].to_vec();
+                                    candidates.push(root_der.clone());
+                                    for cand_der in &candidates {
+                                        let cand = match crate::cert::parse_cert_minimal(cand_der) { Some(c) => c, None => continue };
+                                        if cand.subject == cur.issuer && crate::cert::verify_cert(&current, &cand.spki_der) {
+                                            current = cand_der.clone();
+                                            found = true;
+                                            if cand_der == &root_der {
+                                                trusted = true;
+                                            }
+                                            break;
+                                        }
+                                    }
+                                    if !found { break; }
+                                    if trusted { break; }
+                                }
+                                if !trusted {
+                                    return Err(bad("TLS CA verification failed"));
+                                }
+                            }
+                            Verify::None => {}
                         }
                         cert_verified = true;
                     }
@@ -568,14 +619,14 @@ impl TlsConn {
             }
             let mtype = data[p];
             if mtype == 24 && mlen == 1 && data[p + 4] == 1 {
-                    let k = tls_expand_label(&self.read_key, "traffic upd", &[], 32);
-                    let mut s = [0u8; 32];
-                    s.copy_from_slice(&k);
-                    self.set_read_secret(&s);
-                    let k2 = tls_expand_label(&self.write_key, "traffic upd", &[], 32);
-                    let mut s2 = [0u8; 32];
-                    s2.copy_from_slice(&k2);
-                    self.set_write_secret(&s2);
+                let k = tls_expand_label(&self.read_key, "traffic upd", &[], 32);
+                let mut s = [0u8; 32];
+                s.copy_from_slice(&k);
+                self.set_read_secret(&s);
+                let k2 = tls_expand_label(&self.write_key, "traffic upd", &[], 32);
+                let mut s2 = [0u8; 32];
+                s2.copy_from_slice(&k2);
+                self.set_write_secret(&s2);
             }
             p += 4 + mlen;
         }

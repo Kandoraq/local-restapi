@@ -1,9 +1,6 @@
 mod constants;
-mod crypto;
-mod httpc;
 mod json;
 mod server;
-mod tls;
 mod yt;
 
 fn main() {
@@ -23,11 +20,11 @@ fn main() {
     }
     if args.len() >= 3 && args[1] == "--get" {
         let url = &args[2];
-        let mut headers = vec![("User-Agent".to_string(), httpc::USER_AGENT.to_string())];
+        let mut headers = vec![("User-Agent".to_string(), maqitai::httpc::USER_AGENT.to_string())];
         if let Some(r) = args.get(3) {
             headers.push(("Range".to_string(), r.clone()));
         }
-        match httpc::fetch(url, "GET", &headers, None, 20, None) {
+        match maqitai::httpc::fetch(url, "GET", &headers, None, 20, None) {
             Ok(mut r) => {
                 println!(
                     "status={} ct={} cl={:?} cr={:?}",
@@ -49,7 +46,7 @@ fn main() {
     if args.len() >= 3 && args[1] == "--tls-test" {
         let host = &args[2];
         let url = format!("https://{}/", host);
-        match httpc::get(&url, &[], 60) {
+        match maqitai::httpc::get(&url, &[], 60) {
             Ok(mut r) => {
                 println!("status={} url={} ct={}", r.status, r.final_url, r.content_type());
                 match r.read_to_end(200_000) {

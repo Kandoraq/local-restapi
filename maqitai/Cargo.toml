@@ -1,0 +1,11 @@
+[package]
+name = "maqitai"
+version = "0.1.0"
+edition = "2021"
+description = "Shared pure-Rust TLS and crypto helpers for local-restapi"
+
+[lib]
+name = "maqitai"
+path = "src/lib.rs"
+
+[dependencies]
